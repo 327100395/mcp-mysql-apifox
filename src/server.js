@@ -39,8 +39,22 @@ class MCPMySQLServer {
       return {
         tools: [
           {
+            name: "connect_mysql",
+            description: "连接到MySQL数据库",
+            inputSchema: {
+              type: "object",
+              properties: {
+                dsn: {
+                  type: "string",
+                  description: "MySQL数据库连接字符串，DSN格式：mysql://user:password@host:port/database"
+                }
+              },
+              required: ["dsn"]
+            }
+          },
+          {
             name: "execute_sql",
-            description: "执行SQL查询语句，支持SELECT、INSERT、UPDATE、DELETE操作",
+            description: "执行SQL查询语句，支持SELECT、INSERT、UPDATE、DELETE、SHOW操作",
             inputSchema: {
               type: "object",
               properties: {
@@ -85,6 +99,9 @@ class MCPMySQLServer {
 
       try {
         switch (name) {
+          case "connect_mysql":
+            return await this.handleConnectMySQL(args);
+            
           case "execute_sql":
             return await this.handleExecuteSQL(args);
           
@@ -228,20 +245,94 @@ class MCPMySQLServer {
   }
 
   /**
+   * 处理连接MySQL请求
+   * @param {Object} args - 连接参数
+   * @returns {Object} 连接结果
+   */
+  async handleConnectMySQL(args) {
+    const { dsn } = args;
+    
+    // 验证连接参数
+    const configValidation = this.validator.validateDSN(dsn);
+    if (!configValidation.isValid) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `连接参数验证失败: ${configValidation.error}`
+          }
+        ],
+        isError: true
+      };
+    }
+    
+    // 连接数据库
+    const result = await this.dbManager.connectWithDSN(dsn);
+    
+    if (result.success) {
+      let responseText = "";
+      
+      if (result.alreadyConnected) {
+        responseText = `✓ 已经连接到相同的数据库\n`;
+      } else {
+        responseText = `✓ 数据库连接成功\n`;
+      }
+      
+      responseText += `DSN: ${dsn.replace(/:[^:]*@/, ':******@')}\n`;
+      if (result.connectionInfo) {
+        responseText += `主机: ${result.connectionInfo.host}\n`;
+        responseText += `端口: ${result.connectionInfo.port}\n`;
+        responseText += `用户: ${result.connectionInfo.user}\n`;
+        responseText += `数据库: ${result.connectionInfo.database}\n`;
+      }
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: responseText
+          }
+        ]
+      };
+    } else {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `✗ 数据库连接失败: ${result.error}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+  
+  /**
    * 处理获取连接状态请求
    * @returns {Object} 连接状态
    */
   async handleGetConnectionStatus() {
-    const isActive = this.dbManager.isConnectionActive();
+    const connectionInfo = this.dbManager.getConnectionInfo();
     
-    return {
-      content: [
-        {
-          type: "text",
-          text: `数据库连接状态: ${isActive ? '已连接' : '未连接'}`
-        }
-      ]
-    };
+    if (connectionInfo.connected) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `数据库连接状态: 已连接\n主机: ${connectionInfo.host}\n端口: ${connectionInfo.port}\n用户: ${connectionInfo.user}\n数据库: ${connectionInfo.database}`
+          }
+        ]
+      };
+    } else {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `数据库连接状态: 未连接`
+          }
+        ]
+      };
+    }
   }
 
   /**
@@ -249,9 +340,6 @@ class MCPMySQLServer {
    */
   async start() {
     try {
-      // 初始化数据库连接
-      await this.dbManager.initialize();
-      
       // 启动MCP服务器
       const transport = new StdioServerTransport();
       await this.server.connect(transport);

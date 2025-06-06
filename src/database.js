@@ -10,19 +10,150 @@ class DatabaseManager {
   constructor() {
     this.pool = null;
     this.isConnected = false;
+    this.currentConfig = null;
   }
 
   /**
    * 初始化数据库连接池
    */
   async initialize() {
+    // 使用默认配置初始化连接
+    return this.connect({
+      host: config.database.host,
+      port: config.database.port,
+      user: config.database.user,
+      password: config.database.password,
+      database: config.database.database
+    });
+  }
+  
+  /**
+   * 使用DSN连接到MySQL数据库
+   * @param {string} dsn - 数据库连接字符串，格式：mysql://user:password@host:port/database
+   * @returns {Object} 连接结果
+   */
+  async connectWithDSN(dsn) {
     try {
+      // 解析DSN
+      const dsnInfo = this.parseDSN(dsn);
+      if (!dsnInfo) {
+        return {
+          success: false,
+          error: 'DSN格式无效'
+        };
+      }
+      
+      // 检查是否已经连接到相同的数据库
+      if (this.isConnected && this.currentConfig && 
+          this.currentConfig.host === dsnInfo.host && 
+          this.currentConfig.port === dsnInfo.port && 
+          this.currentConfig.user === dsnInfo.user && 
+          this.currentConfig.database === dsnInfo.database) {
+        return {
+          success: true,
+          message: '已经连接到相同的数据库',
+          alreadyConnected: true,
+          connectionInfo: dsnInfo
+        };
+      }
+      
+      // 如果已有连接，先关闭
+      if (this.pool) {
+        await this.close();
+      }
+      
+      // 创建新的连接池
+      this.pool = mysql.createPool(dsn);
+
+      // 测试连接
+      const connection = await this.pool.getConnection();
+      await connection.ping();
+      connection.release();
+      
+      this.isConnected = true;
+      this.currentConfig = dsnInfo;
+      console.log('✓ 数据库连接成功');
+      
+      return {
+        success: true,
+        message: '数据库连接成功',
+        connectionInfo: dsnInfo
+      };
+    } catch (error) {
+      console.error('✗ 数据库连接失败:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * 解析DSN连接字符串
+   * @param {string} dsn - 数据库连接字符串
+   * @returns {Object|null} 解析后的连接信息
+   */
+  parseDSN(dsn) {
+    try {
+      // 匹配DSN格式：mysql://user:password@host:port/database
+      const regex = /mysql:\/\/([^:]+):([^@]+)@([^:]+)(?::(\d+))?\/([^?]+)(?:\?.*)?/;
+      const match = dsn.match(regex);
+      
+      if (!match) {
+        return null;
+      }
+      
+      return {
+        user: match[1],
+        password: match[2],
+        host: match[3],
+        port: match[4] ? parseInt(match[4]) : 3306,
+        database: match[5]
+      };
+    } catch (error) {
+      console.error('DSN解析错误:', error.message);
+      return null;
+    }
+  }
+  
+  /**
+   * 连接到MySQL数据库（使用配置对象）
+   * @param {Object} dbConfig - 数据库连接配置
+   * @returns {Object} 连接结果
+   */
+  async connect(dbConfig) {
+    try {
+      // 检查是否已经连接到相同的数据库
+      if (this.isConnected && this.currentConfig && 
+          this.currentConfig.host === dbConfig.host && 
+          this.currentConfig.port === dbConfig.port && 
+          this.currentConfig.user === dbConfig.user && 
+          this.currentConfig.database === dbConfig.database) {
+        return {
+          success: true,
+          message: '已经连接到相同的数据库',
+          alreadyConnected: true,
+          connectionInfo: {
+            host: dbConfig.host,
+            port: dbConfig.port || 3306,
+            user: dbConfig.user,
+            database: dbConfig.database
+          }
+        };
+      }
+      
+      // 如果已有连接，先关闭
+      if (this.pool) {
+        await this.close();
+      }
+      
+      // 创建新的连接池
       this.pool = mysql.createPool({
-        host: config.database.host,
-        port: config.database.port,
-        user: config.database.user,
-        password: config.database.password,
-        database: config.database.database,
+        host: dbConfig.host,
+        port: dbConfig.port || config.database.port,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        database: dbConfig.database,
         connectionLimit: config.database.connectionLimit,
         acquireTimeout: config.database.acquireTimeout,
         timeout: config.database.timeout,
@@ -36,10 +167,25 @@ class DatabaseManager {
       connection.release();
       
       this.isConnected = true;
+      this.currentConfig = { ...dbConfig };
       console.log('✓ 数据库连接成功');
+      
+      return {
+        success: true,
+        message: '数据库连接成功',
+        connectionInfo: {
+          host: dbConfig.host,
+          port: dbConfig.port || 3306,
+          user: dbConfig.user,
+          database: dbConfig.database
+        }
+      };
     } catch (error) {
       console.error('✗ 数据库连接失败:', error.message);
-      throw error;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
@@ -161,6 +307,26 @@ class DatabaseManager {
    */
   isConnectionActive() {
     return this.isConnected;
+  }
+  
+  /**
+   * 获取当前连接信息
+   * @returns {Object} 连接信息
+   */
+  getConnectionInfo() {
+    if (!this.isConnected || !this.currentConfig) {
+      return {
+        connected: false
+      };
+    }
+    
+    return {
+      connected: true,
+      host: this.currentConfig.host,
+      port: this.currentConfig.port,
+      user: this.currentConfig.user,
+      database: this.currentConfig.database
+    };
   }
 }
 

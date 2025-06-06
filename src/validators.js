@@ -15,7 +15,7 @@ class SQLValidator {
       ];
       
       // 允许的操作类型
-      this.allowedOperations = ['select', 'insert', 'update', 'delete'];
+      this.allowedOperations = ['select', 'insert', 'update', 'delete', 'show'];
     }
   
     /**
@@ -107,7 +107,7 @@ class SQLValidator {
     }
   
     /**
-     * 验证查询参数
+     * 验证SQL查询参数
      * @param {Array} params - 查询参数
      * @returns {Object} 验证结果
      */
@@ -115,19 +115,110 @@ class SQLValidator {
       if (!Array.isArray(params)) {
         return {
           isValid: false,
-          error: '参数必须是数组格式'
+          error: '参数必须是数组'
         };
       }
-  
-      // 检查参数数量限制
-      if (params.length > 100) {
+      
+      // 检查参数类型
+      for (let i = 0; i < params.length; i++) {
+        const param = params[i];
+        const type = typeof param;
+        
+        if (param !== null && !['string', 'number', 'boolean'].includes(type)) {
+          return {
+            isValid: false,
+            error: `参数 ${i+1} 类型无效: ${type}`
+          };
+        }
+      }
+      
+      return {
+        isValid: true
+      };
+    }
+    
+    /**
+     * 验证数据库连接参数
+     * @param {Object} config - 连接配置
+     * @returns {Object} 验证结果
+     */
+    validateConnectionConfig(config) {
+      if (!config || typeof config !== 'object') {
         return {
           isValid: false,
-          error: '参数数量不能超过100个'
+          error: '连接配置必须是对象'
         };
       }
-  
-      return { isValid: true };
+      
+      // 检查必要参数
+      const requiredFields = ['host', 'user', 'password', 'database'];
+      for (const field of requiredFields) {
+        if (!config[field]) {
+          return {
+            isValid: false,
+            error: `缺少必要参数: ${field}`
+          };
+        }
+      }
+      
+      // 验证主机名
+      if (typeof config.host !== 'string') {
+        return {
+          isValid: false,
+          error: '主机名必须是字符串'
+        };
+      }
+      
+      // 验证端口号
+      if (config.port && (typeof config.port !== 'number' || config.port < 1 || config.port > 65535)) {
+        return {
+          isValid: false,
+          error: '端口号必须是1-65535之间的数字'
+        };
+      }
+      
+      return {
+        isValid: true
+      };
+    }
+    
+    /**
+     * 验证DSN连接字符串
+     * @param {string} dsn - 数据库连接字符串
+     * @returns {Object} 验证结果
+     */
+    validateDSN(dsn) {
+      if (!dsn || typeof dsn !== 'string') {
+        return {
+          isValid: false,
+          error: 'DSN必须是字符串'
+        };
+      }
+      
+      // 验证DSN格式
+      const dsnRegex = /^mysql:\/\/([^:]+):([^@]+)@([^:]+)(?::(\d+))?\/([^?]+)(?:\?.*)?$/;
+      if (!dsnRegex.test(dsn)) {
+        return {
+          isValid: false,
+          error: 'DSN格式无效，正确格式为：mysql://user:password@host:port/database'
+        };
+      }
+      
+      // 提取端口号并验证
+      const portMatch = dsn.match(/:([0-9]+)\//); 
+      if (portMatch) {
+        const port = parseInt(portMatch[1]);
+        if (port < 1 || port > 65535) {
+          return {
+            isValid: false,
+            error: '端口号必须是1-65535之间的数字'
+          };
+        }
+      }
+      
+      return {
+        isValid: true
+      };
     }
   }
   
