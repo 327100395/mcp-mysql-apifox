@@ -169,7 +169,6 @@ class MCPMySQLServer {
     
     if (result.success) {
       let responseText = `✓ SQL执行成功\n`;
-      responseText += `操作类型: ${result.operation}\n`;
       responseText += `执行时间: ${result.executionTime}ms\n`;
       responseText += `影响行数: ${result.rowCount}\n`;
       
@@ -177,8 +176,8 @@ class MCPMySQLServer {
         responseText += `插入ID: ${result.insertId}\n`;
       }
       
-      if (result.operation === 'SELECT' && result.data.length > 0) {
-        responseText += `\n查询结果:\n`;
+      if (result.data) {
+        responseText += `\n结果:\n`;
         responseText += JSON.stringify(result.data, null, 2);
       }
 

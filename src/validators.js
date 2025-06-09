@@ -43,14 +43,7 @@ class SQLValidator {
         }
       }
   
-      // 检查是否是允许的操作
       const operation = this.getOperationType(cleanSQL);
-      if (!this.allowedOperations.includes(operation)) {
-        return {
-          isValid: false,
-          error: `不支持的操作类型: ${operation}`
-        };
-      }
   
       // 检查SQL注入风险
       const injectionCheck = this.checkSQLInjection(cleanSQL);
