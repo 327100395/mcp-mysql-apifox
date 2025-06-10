@@ -54,7 +54,7 @@ class MCPMySQLServer {
           },
           {
             name: "execute_sql",
-            description: "执行SQL查询语句，支持SELECT、INSERT、UPDATE、DELETE、SHOW操作",
+            description: "执行SQL语句",
             inputSchema: {
               type: "object",
               properties: {
