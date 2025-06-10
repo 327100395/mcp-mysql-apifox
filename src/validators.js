@@ -7,8 +7,7 @@ class SQLValidator {
     constructor() {
       // 危险关键词列表
       this.dangerousKeywords = [
-        'drop table', 'drop database', 'truncate',
-        'alter table', 'create database', 'drop index',
+        'drop table', 'drop database', 'truncate', 'create database', 'drop index',
         'create user', 'drop user', 'grant', 'revoke',
         'load_file', 'into outfile', 'into dumpfile',
         'exec', 'execute', 'sp_', 'xp_'
