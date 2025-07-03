@@ -31,6 +31,6 @@
    ```
 4. 在项目定义下面规则
    ```md
-      - 如果要使用`tools`工具调用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
-      - 如果要创建接口,调用`tools`工具的`import_openapi`,Apifox项目ID:"...",Apifox的API密钥:"..."
+      - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
+      - 如果要创建接口,调用`import_openapi`,Apifox项目ID:"...",Apifox的API密钥:"..."
    ```
