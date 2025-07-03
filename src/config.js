@@ -29,6 +29,14 @@ const config = {
   mcp: {
     name: process.env.MCP_SERVER_NAME || 'mysql-mcp-server',
     version: process.env.MCP_SERVER_VERSION || '1.0.0'
+  },
+  
+  // Apifox配置
+  apifox: {
+    apiKey: process.env.APIFOX_API_KEY || '',
+    defaultProjectId: process.env.APIFOX_DEFAULT_PROJECT_ID || '',
+    endpointFolderId: parseInt(process.env.APIFOX_ENDPOINT_FOLDER_ID) || 0,
+    schemaFolderId: parseInt(process.env.APIFOX_SCHEMA_FOLDER_ID) || 0
   }
 };
 
