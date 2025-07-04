@@ -2,9 +2,9 @@
 ## 主要功能
 
 - 不同项目连接不同
-- 执行 SQL
-- 导入 OpenAPI 数据到 Apifox
-- 
+- 在 Mysql 数据库执行 SQL
+- 添加接口文档到 Apifox
+
 ## 安装与使用
 
 1. 克隆项目
@@ -32,5 +32,5 @@
 4. 在项目定义下面规则
    ```md
       - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
-      - 如果要创建接口,调用`import_openapi`,Apifox项目ID:"...",Apifox的API密钥:"..."
+      - 如果要创建接口文档,调用`import_openapi`,项目ID:"...",API密钥:"..."
    ```
