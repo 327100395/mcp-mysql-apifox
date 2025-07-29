@@ -10,6 +10,8 @@ const {
   CallToolRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 const DatabaseManager = require('./database');
 const SQLValidator = require('./validators');
@@ -76,7 +78,7 @@ class MCPMySQLServer {
           // },
           {
             name: "execute_mysql",
-            description: "执行mysql语句",
+            description: "执行mysql语句,使用前在规则定义DSN链接",
             inputSchema: {
               type: "object",
               properties: {
@@ -117,13 +119,13 @@ class MCPMySQLServer {
           // },
           {
             name: "import_openapi",
-            description: "导入OpenAPI数据到Apifox",
+            description: "导入OpenAPI数据到Apifox,使用前在规则定义项目ID和API密钥",
             inputSchema: {
               type: "object",
               properties: {
                 input: {
                   type: "string",
-                  description: "JSON、YAML 或 X-YAML 格式 OpenAPI 数据字符串。"
+                  description: "JSON、YAML 或 X-YAML 格式 OpenAPI 数据字符串，或接口文档json文件绝对路径，或包含json文件的目录绝对路径"
                 },
                 projectId: {
                   type: "string",
@@ -518,43 +520,136 @@ class MCPMySQLServer {
     const { input, projectId, apiKey} = args;
     
     try {
-      // 准备请求数据
-      const requestData = {
-        input: input
-      };
+      let inputData;
+      let isDirectory = false;
+      let isFile = false;
       
-      // 发送请求到Apifox API
-      const response = await axios.post(
-        `https://api.apifox.com/v1/projects/${projectId}/import-openapi?locale=zh-CN`,
-        requestData,
-        {
-          headers: {
-            'X-Apifox-Api-Version': '2024-03-28',
-            'Authorization': 'Bearer ' + apiKey,
-            'Content-Type': 'application/json'
-          }
+      // 检查input是否为文件路径或目录路径
+      try {
+        const stats = fs.statSync(input);
+        if (stats.isFile()) {
+          isFile = true;
+        } else if (stats.isDirectory()) {
+          isDirectory = true;
         }
-      );
+      } catch (e) {
+        // 不是有效路径，当作字符串处理
+      }
       
-      // 完整返回Apifox的响应JSON
-      if (response.status === 200) {
+      if (isFile) {
+        // 处理单个文件
+        try {
+          const fileContent = fs.readFileSync(input, 'utf8');
+          inputData = fileContent;
+          
+          const result = await this.importSingleOpenAPI(inputData, projectId, apiKey);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `✓ 文件 ${input} 导入成功`
+              }
+            ]
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `✗ 读取文件 ${input} 失败: ${error.message}`
+              }
+            ],
+            isError: true
+          };
+        }
+      } else if (isDirectory) {
+        // 处理目录中的所有json文件（包括子目录）
+        try {
+          const jsonFiles = this.getAllJsonFiles(input);
+          
+          if (jsonFiles.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `✗ 目录 ${input} 及其子目录中没有找到json文件`
+                }
+              ],
+              isError: true
+            };
+          }
+          
+          const results = [];
+          const failedFiles = [];
+          
+          for (const filePath of jsonFiles) {
+            try {
+              const fileContent = fs.readFileSync(filePath, 'utf8');
+              const result = await this.importSingleOpenAPI(fileContent, projectId, apiKey);
+              const relativePath = path.relative(input, filePath);
+              results.push({
+                file: relativePath,
+                success: true,
+                result: result
+              });
+            } catch (error) {
+              const relativePath = path.relative(input, filePath);
+              failedFiles.push({
+                file: relativePath,
+                path: filePath,
+                error: error.message
+              });
+            }
+          }
+          
+          let responseText = `批量导入完成:\n`;
+          
+          if (results.length > 0) {
+            responseText += `成功导入的文件:\n`;
+            results.forEach(r => {
+              responseText += `✓ ${r.file}\n`;
+            });
+            responseText += `\n`;
+          }
+          
+          if (failedFiles.length > 0) {
+            responseText += `导入失败的文件:\n`;
+            failedFiles.forEach(f => {
+              responseText += `✗ ${f.file} (${f.path}): ${f.error}\n`;
+            });
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: responseText
+              }
+            ],
+            isError: failedFiles.length > 0
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `✗ 读取目录 ${input} 失败: ${error.message}`
+              }
+            ],
+            isError: true
+          };
+        }
+      } else {
+        // 当作字符串处理
+        inputData = input;
+        const result = await this.importSingleOpenAPI(inputData, projectId, apiKey);
         return {
           content: [
             {
               type: "text",
-              text: `✓ OpenAPI数据导入成功\n响应JSON:\n${JSON.stringify(response.data, null, 2)}`
+              text: `✓ 导入成功`
             }
           ]
-        };
-      } else {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `✗ OpenAPI数据导入失败: ${response.statusText}\n响应JSON:\n${JSON.stringify(response.data, null, 2)}`
-            }
-          ],
-          isError: true
         };
       }
     } catch (error) {
@@ -580,6 +675,79 @@ class MCPMySQLServer {
         ],
         isError: true
       };
+    }
+  }
+  
+  /**
+   * 递归获取目录及其子目录中的所有JSON文件
+   * @param {string} dirPath - 目录路径
+   * @returns {Array} JSON文件路径数组
+   */
+  getAllJsonFiles(dirPath) {
+    const jsonFiles = [];
+    
+    const scanDirectory = (currentPath) => {
+      try {
+        const items = fs.readdirSync(currentPath);
+        
+        for (const item of items) {
+          const fullPath = path.join(currentPath, item);
+          const stats = fs.statSync(fullPath);
+          
+          if (stats.isDirectory()) {
+            // 递归扫描子目录
+            scanDirectory(fullPath);
+          } else if (stats.isFile() && path.extname(item).toLowerCase() === '.json') {
+            // 添加JSON文件
+            jsonFiles.push(fullPath);
+          }
+        }
+      } catch (error) {
+        // 忽略无法访问的目录
+        console.warn(`无法访问目录: ${currentPath}, 错误: ${error.message}`);
+      }
+    };
+    
+    scanDirectory(dirPath);
+    return jsonFiles;
+  }
+
+  /**
+   * 导入单个OpenAPI数据到Apifox
+   * @param {string} inputData - OpenAPI数据字符串
+   * @param {string} projectId - Apifox项目ID
+   * @param {string} apiKey - Apifox API密钥
+   * @returns {Object} 导入结果
+   */
+  async importSingleOpenAPI(inputData, projectId, apiKey) {
+    // 准备请求数据
+    const requestData = {
+      input: inputData
+    };
+    
+    // 发送请求到Apifox API
+    const response = await axios.post(
+      `https://api.apifox.com/v1/projects/${projectId}/import-openapi?locale=zh-CN`,
+      requestData,
+      {
+        headers: {
+          'X-Apifox-Api-Version': '2024-03-28',
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (response.status === 200) {
+      return response.data;
+    } else {
+      if(response?.data?.data?.errors?.length) {
+        throw new Error(response?.data?.data?.errors[0].message);
+      }
+      if(response?.data?.errors?.length) {
+        throw new Error(response?.data?.errors[0].message);
+      }
+      throw new Error(`导入失败: ${response.statusText}`);
     }
   }
 
