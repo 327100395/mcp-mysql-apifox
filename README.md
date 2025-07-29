@@ -32,5 +32,5 @@
 4. 建议在项目定义下面规则
    ```md
       - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
-      - 如果要编辑接口文档,使用import_openapi,项目id:{apifox项目id},api密钥:{apifox项目密钥},每次仅导入一个接口json文件，导入前在 `.doc` 目录下编辑接口文件（路径为`.doc/[tags]/[summary].json`）。
+      - 如果要编辑接口文档,使用import_openapi,项目id:{apifox项目id},api密钥:{apifox项目密钥},每次仅导入一个接口json文件，导入前在 `.apiDoc` 目录下编辑接口文件（路径为`.apiDoc/[tags]/[summary].json`）。
    ```
