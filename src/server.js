@@ -119,13 +119,13 @@ class MCPMySQLServer {
           // },
           {
             name: "import_openapi",
-            description: "导入OpenAPI数据到Apifox,使用前在规则定义项目ID和API密钥",
+            description: "导入OpenAPI数据到Apifox,使用前在规则定义项目ID和API密钥,可导入json字符串/包含json文档的目录/json文件",
             inputSchema: {
               type: "object",
               properties: {
                 input: {
                   type: "string",
-                  description: "JSON、YAML 或 X-YAML 格式 OpenAPI 数据字符串，或接口文档json文件绝对路径，或包含json文件的目录绝对路径"
+                  description: "JSON、YAML 或 X-YAML 格式 OpenAPI 数据字符串，或接口文档json文件绝对路径（示例\"file#[路径]\"），或包含json文件的目录绝对路径（示例\"dir#[路径]\"）。注意路径可能有盘符"
                 },
                 projectId: {
                   type: "string",
@@ -517,23 +517,45 @@ class MCPMySQLServer {
    * @returns {Object} 导入结果
    */
   async handleImportOpenAPIToApifox(args) {
-    const { input, projectId, apiKey} = args;
+    let { input, projectId, apiKey} = args;
     
     try {
       let inputData;
       let isDirectory = false;
       let isFile = false;
       
-      // 检查input是否为文件路径或目录路径
-      try {
-        const stats = fs.statSync(input);
-        if (stats.isFile()) {
-          isFile = true;
-        } else if (stats.isDirectory()) {
-          isDirectory = true;
+      // 标准化路径分隔符，统一使用系统默认分隔符
+      if (input.startsWith('file#') || input.startsWith('dir#')) {
+        const prefix = input.startsWith('file#') ? 'file#' : 'dir#';
+        const pathPart = input.substring(prefix.length);
+        // 将路径中的正斜杠和反斜杠统一为系统默认分隔符
+        input = prefix + pathPart.replace(/\\/g, path.sep).replace(/\//g, path.sep);
+      } else {
+        // 将路径中的正斜杠和反斜杠统一为系统默认分隔符
+        input = input.replace(/\\/g, path.sep).replace(/\//g, path.sep);
+      }
+      
+      // 检查是否需要处理前缀
+      if (input.startsWith('file#')) {
+        // 处理文件前缀
+        input = input.substring(5); // 移除 'file#' 前缀
+        isFile = true;
+      } else if (input.startsWith('dir#')) {
+        // 处理目录前缀
+        input = input.substring(4); // 移除 'dir#' 前缀
+        isDirectory = true;
+      } else {
+        // 检查input是否为文件路径或目录路径
+        try {
+          const stats = fs.statSync(input);
+          if (stats.isFile()) {
+            isFile = true;
+          } else if (stats.isDirectory()) {
+            isDirectory = true;
+          }
+        } catch (e) {
+          // 不是有效路径，当作字符串处理
         }
-      } catch (e) {
-        // 不是有效路径，当作字符串处理
       }
       
       if (isFile) {
@@ -737,16 +759,14 @@ class MCPMySQLServer {
         }
       }
     );
-    
-    if (response.status === 200) {
+
+    if(response?.data?.data?.errors?.length) {
+      throw new Error(response?.data?.data?.errors[0].message);
+    } else if(response?.data?.errors?.length) {
+      throw new Error(response?.data?.errors[0].message);
+    } else if (response.status === 200) {
       return response.data;
     } else {
-      if(response?.data?.data?.errors?.length) {
-        throw new Error(response?.data?.data?.errors[0].message);
-      }
-      if(response?.data?.errors?.length) {
-        throw new Error(response?.data?.errors[0].message);
-      }
       throw new Error(`导入失败: ${response.statusText}`);
     }
   }
