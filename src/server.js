@@ -88,7 +88,7 @@ class MCPMySQLServer {
                 },
                 sql: {
                   type: "string",
-                  description: "要执行的SQL语句"
+                  description: "要执行的SQL语句,执行失败重试2次"
                 },
                 params: {
                   type: "array",
