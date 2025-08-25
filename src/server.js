@@ -125,7 +125,7 @@ class MCPMySQLServer {
               properties: {
                 input: {
                   type: "string",
-                  description: "JSON、YAML 或 X-YAML 格式 OpenAPI 数据字符串，或接口文档json文件绝对路径（示例\"file#[路径]\"），或包含json文件的目录绝对路径（示例\"dir#[路径]\"）。注意路径可能有盘符"
+                  description: "JSON 格式 OpenAPI 数据字符串，或接口文档json文件绝对路径（示例\"file#[路径]\"），或包含json文件的目录绝对路径（示例\"dir#[路径]\"）。注意路径可能有盘符"
                 },
                 projectId: {
                   type: "string",
@@ -137,6 +137,28 @@ class MCPMySQLServer {
                 }
               },
               required: ["input", "projectId", "apiKey"]
+            }
+          },
+          {
+            name: "download_apis",
+            description: "从Apifox下载所有API到指定目录,可传递目录绝对路径、Apifox项目ID和API密钥",
+            inputSchema: {
+              type: "object",
+              properties: {
+                rootDir: {
+                  type: "string",
+                  description: "下载文件的根目录路径"
+                },
+                projectId: {
+                  type: "string",
+                  description: "Apifox项目ID"
+                },
+                apiKey: {
+                  type: "string",
+                  description: "Apifox API密钥"
+                }
+              },
+              required: ["rootDir", "projectId", "apiKey"]
             }
           }
         ]
@@ -166,6 +188,9 @@ class MCPMySQLServer {
           
           case "import_openapi":
             return await this.handleImportOpenAPIToApifox(args);
+          
+          case "download_apis":
+            return await this.handleDownloadAPIs(args);
           
           default:
             throw new Error(`未知的工具: ${name}`);
@@ -732,6 +757,190 @@ class MCPMySQLServer {
     
     scanDirectory(dirPath);
     return jsonFiles;
+  }
+
+  /**
+   * 处理下载APIs命令
+   * @param {Object} args - 参数对象
+   * @param {string} args.rootDir - 下载文件的根目录路径
+   * @param {string} args.projectId - Apifox项目ID
+   * @param {string} args.apiKey - Apifox API密钥
+   */
+  async handleDownloadAPIs(args) {
+    const { rootDir, projectId, apiKey } = args;
+    
+    try {
+      // 验证参数
+      if (!rootDir || !projectId || !apiKey) {
+        throw new Error('缺少必要参数: rootDir, projectId, apiKey');
+      }
+      
+      // 确保根目录存在
+      if (!fs.existsSync(rootDir)) {
+        fs.mkdirSync(rootDir, { recursive: true });
+      }
+      
+      // 调用Apifox API获取OpenAPI 3.1 JSON数据
+      const openApiData = await this.downloadOpenAPIFromApifox(projectId, apiKey);
+      
+      // 解析并创建对应文件
+      await this.createFilesFromOpenAPI(openApiData, rootDir);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `✓ 成功从Apifox项目 ${projectId} 下载: ${rootDir}`
+          }
+        ]
+      };
+      
+    } catch (error) {
+      console.error('下载APIs失败:', error);
+      throw new Error(`下载APIs失败: ${error.message}`);
+    }
+  }
+  
+  /**
+   * 从Apifox下载OpenAPI数据
+   * @param {string} projectId - 项目ID
+   * @param {string} apiKey - API密钥
+   */
+  async downloadOpenAPIFromApifox(projectId, apiKey) {
+    const requestData = {
+      "scope": {
+        "type": "ALL",
+        "excludedByTags": ["pet"]
+      },
+      "options": {
+        "includeApifoxExtensionProperties": false,
+        "addFoldersToTags": false
+      },
+      "oasVersion": "3.1",
+      "exportFormat": "JSON"
+    };
+    
+    let lastError;
+    // 重试3次
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await axios.post(
+          `https://api.apifox.com/v1/projects/${projectId}/export-openapi?locale=zh-CN`,
+          requestData,
+          {
+            headers: {
+              'X-Apifox-Api-Version': '2024-03-28',
+              'Authorization': 'Bearer ' + apiKey,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (response.status !== 200) {
+          throw new Error(`API请求失败: ${response.statusText}`);
+        }
+        
+        return response.data;
+        
+      } catch (error) {
+        lastError = error;
+        console.error(`下载API数据失败 (尝试 ${attempt}/3):`, error.message);
+        
+        if (attempt < 3) {
+          // 等待1秒后重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+    
+    throw new Error(`下载API数据失败，已重试3次: ${lastError.message}`);
+  }
+  
+  /**
+   * 安全处理文件名，转码特殊字符
+   * @param {string} filename - 原始文件名
+   * @returns {string} - 安全的文件名
+   */
+  sanitizeFileName(filename) {
+    // 定义需要转码的特殊字符映射
+    const charMap = {
+      '/': '／',        // 全角斜杠
+      '\\': '＼',      // 全角反斜杠
+      ':': '：',        // 全角冒号
+      '*': '＊',        // 全角星号
+      '?': '？',        // 全角问号
+      '"': '＂',        // 全角双引号
+      '<': '＜',        // 全角小于号
+      '>': '＞',        // 全角大于号
+      '|': '｜'         // 全角竖线
+    };
+    
+    let safeName = filename;
+    for (const [char, replacement] of Object.entries(charMap)) {
+      safeName = safeName.replace(new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
+    }
+    
+    return safeName;
+  }
+
+  /**
+   * 根据OpenAPI数据创建文件
+   * @param {Object} openApiData - OpenAPI数据
+   * @param {string} rootDir - 根目录
+   */
+  async createFilesFromOpenAPI(openApiData, rootDir) {
+    // 如果有paths，为每个API端点创建单独的文件
+    if (openApiData.paths) {
+      for (const [pathKey, pathValue] of Object.entries(openApiData.paths)) {
+        for (const [method, methodData] of Object.entries(pathValue)) {
+          // 获取summary作为文件名，并进行安全处理
+          const summary = methodData.summary || `${method}_${pathKey.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const safeFileName = this.sanitizeFileName(summary);
+          const fileName = `${safeFileName}.json`;
+          
+          // 获取tags作为目录结构
+          let targetDir = rootDir;
+          if (methodData.tags && methodData.tags.length > 0) {
+            // 为每个tag创建目录层级
+            for (const tag of methodData.tags) {
+              targetDir = path.join(targetDir, tag);
+            }
+          }
+          
+          // 确保目录存在
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          
+          const filePath = path.join(targetDir, fileName);
+          
+          // 构建完整的OpenAPI结构，但paths中只包含当前API
+          const apiData = {
+            openapi: openApiData.openapi,
+            info: openApiData.info,
+            servers: openApiData.servers,
+            paths: {
+              [pathKey]: {
+                [method]: methodData
+              }
+            },
+            components: openApiData.components,
+            security: openApiData.security,
+            tags: openApiData.tags,
+            externalDocs: openApiData.externalDocs
+          };
+          
+          // 移除undefined的字段
+          Object.keys(apiData).forEach(key => {
+            if (apiData[key] === undefined) {
+              delete apiData[key];
+            }
+          });
+          
+          fs.writeFileSync(filePath, JSON.stringify(apiData, null, 2), 'utf8');
+        }
+      }
+    }
   }
 
   /**

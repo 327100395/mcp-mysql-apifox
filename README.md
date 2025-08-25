@@ -4,6 +4,7 @@
 - 不同项目连接不同
 - 在 Mysql 数据库执行 SQL
 - 添加接口文档到 Apifox
+- 从 Apifox 下载所有API到本地文件
 
 ## 安装与使用
 
@@ -29,8 +30,46 @@
       }
     }
    ```
-4. 建议在项目定义下面规则
-   ```md
-      - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
-      - 如果要编辑接口文档,使用import_openapi,项目id:{apifox项目id},api密钥:{apifox项目密钥},每次仅导入一个接口json文件，导入前在 `.apiDoc` 目录下编辑接口文件（路径为`[工作区根目录]/.apiDoc/[tags]/[summary].json`）。
-   ```
+   4. 建议在项目定义下面规则
+      ```md
+         - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
+         - 接口文档管理规范(注意必须在明确"创建/更新接口文档"时才操作)：
+            - 使用 import_openapi 工具导入，项目信息：
+               - 项目ID: [apiFox项目id]
+               - API密钥: [apiFox密钥]
+               - 保存接口根路径: `.apiDoc`目录
+            - 接口文件规范：
+               - 文件位置在保存接口根路径下
+               - 目录结构：按 tags 属性数组顺序创建子目录
+               - 文件命名：使用 summary 属性值，格式为 JSON
+               - 每次仅允许导入单个接口文件。
+      ```
+
+## 可用命令
+
+### execute_mysql
+执行MySQL语句，需要提供DSN连接字符串。
+
+**参数：**
+- `dsn`: MySQL数据库连接字符串，格式：`mysql://user:password@host:port/database`
+- `sql`: 要执行的SQL语句
+- `params`: SQL查询参数（可选）
+
+### import_openapi
+导入OpenAPI数据到Apifox。
+
+**参数：**
+- `input`: JSON、YAML或X-YAML格式的OpenAPI数据字符串，或文件路径
+- `projectId`: Apifox项目ID
+- `apiKey`: Apifox API密钥
+
+### download_apis
+从Apifox下载所有API到本地文件。
+
+**参数：**
+- `rootDir`: 下载文件的根目录路径
+- `projectId`: Apifox项目ID
+- `apiKey`: Apifox API密钥
+
+**功能说明：**
+- 下载完整的OpenAPI 3.1规范文档
