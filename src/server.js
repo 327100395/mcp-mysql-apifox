@@ -27,7 +27,7 @@ class MCPMySQLServer {
         tools: {},
       },
     });
-    
+
     this.dbManager = new DatabaseManager();
     this.validator = new SQLValidator();
     this.setupHandlers();
@@ -173,25 +173,25 @@ class MCPMySQLServer {
         switch (name) {
           case "connect_mysql":
             return await this.handleConnectMySQL(args);
-            
+
           case "execute_sql":
             return await this.handleExecuteSQL(args);
-          
+
           case "execute_mysql":
             return await this.handleExecuteMySQL(args);
-          
+
           case "get_tables_info":
             return await this.handleGetTablesInfo();
-          
+
           case "get_connection_status":
             return await this.handleGetConnectionStatus();
-          
+
           case "import_openapi":
             return await this.handleImportOpenAPIToApifox(args);
-          
+
           case "download_apis":
             return await this.handleDownloadAPIs(args);
-          
+
           default:
             throw new Error(`未知的工具: ${name}`);
         }
@@ -247,16 +247,16 @@ class MCPMySQLServer {
 
     // 执行SQL
     const result = await this.dbManager.executeQuery(sql, params);
-    
+
     if (result.success) {
       let responseText = `✓ SQL执行成功\n`;
       responseText += `执行时间: ${result.executionTime}ms\n`;
       responseText += `影响行数: ${result.rowCount}\n`;
-      
+
       if (result.insertId) {
         responseText += `插入ID: ${result.insertId}\n`;
       }
-      
+
       if (result.data) {
         responseText += `\n结果:\n`;
         responseText += JSON.stringify(result.data, null, 2);
@@ -289,14 +289,14 @@ class MCPMySQLServer {
    */
   async handleGetTablesInfo() {
     const result = await this.dbManager.getTablesInfo();
-    
+
     if (result.success) {
       let responseText = `数据库表信息:\n\n`;
-      
+
       for (const table of result.data) {
         responseText += `表名: ${table.name}\n`;
         responseText += `字段信息:\n`;
-        
+
         for (const column of table.columns) {
           responseText += `  - ${column.Field} (${column.Type}) ${column.Null === 'NO' ? 'NOT NULL' : 'NULL'} ${column.Key ? column.Key : ''}\n`;
         }
@@ -331,7 +331,7 @@ class MCPMySQLServer {
    */
   async handleConnectMySQL(args) {
     const { dsn } = args;
-    
+
     // 验证连接参数
     const configValidation = this.validator.validateDSN(dsn);
     if (!configValidation.isValid) {
@@ -345,19 +345,19 @@ class MCPMySQLServer {
         isError: true
       };
     }
-    
+
     // 连接数据库
     const result = await this.dbManager.connectWithDSN(dsn);
-    
+
     if (result.success) {
       let responseText = "";
-      
+
       if (result.alreadyConnected) {
         responseText = `✓ 已经连接到相同的数据库\n`;
       } else {
         responseText = `✓ 数据库连接成功\n`;
       }
-      
+
       responseText += `DSN: ${dsn.replace(/:[^:]*@/, ':******@')}\n`;
       if (result.connectionInfo) {
         responseText += `主机: ${result.connectionInfo.host}\n`;
@@ -365,7 +365,7 @@ class MCPMySQLServer {
         responseText += `用户: ${result.connectionInfo.user}\n`;
         responseText += `数据库: ${result.connectionInfo.database}\n`;
       }
-      
+
       return {
         content: [
           {
@@ -386,14 +386,14 @@ class MCPMySQLServer {
       };
     }
   }
-  
+
   /**
    * 处理获取连接状态请求
    * @returns {Object} 连接状态
    */
   async handleGetConnectionStatus() {
     const connectionInfo = this.dbManager.getConnectionInfo();
-    
+
     if (connectionInfo.connected) {
       return {
         content: [
@@ -423,7 +423,7 @@ class MCPMySQLServer {
       // 启动MCP服务器
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-      
+
       console.log(`✓ MCP MySQL Server 启动成功`);
       console.log(`服务器名称: ${config.mcp.name}`);
       console.log(`服务器版本: ${config.mcp.version}`);
@@ -440,7 +440,7 @@ class MCPMySQLServer {
    */
   async handleExecuteMySQL(args) {
     const { dsn, sql, params = [] } = args;
-    
+
     // 验证DSN
     const dsnValidation = this.validator.validateDSN(dsn);
     if (!dsnValidation.isValid) {
@@ -454,7 +454,7 @@ class MCPMySQLServer {
         isError: true
       };
     }
-    
+
     // 验证SQL语句
     const sqlValidation = this.validator.validateSQL(sql);
     if (!sqlValidation.isValid) {
@@ -482,7 +482,7 @@ class MCPMySQLServer {
         isError: true
       };
     }
-    
+
     // 连接数据库
     const connectResult = await this.dbManager.connectWithDSN(dsn);
     if (!connectResult.success) {
@@ -496,20 +496,20 @@ class MCPMySQLServer {
         isError: true
       };
     }
-    
+
     // 执行SQL
     const result = await this.dbManager.executeQuery(sql, params);
-    
+
     if (result.success) {
       let responseText = `✓ 成功执行SQL\n`;
       responseText += `DSN: ${dsn.replace(/:[^:]*@/, ':******@')}\n`;
       responseText += `执行时间: ${result.executionTime}ms\n`;
       responseText += `影响行数: ${result.rowCount}\n`;
-      
+
       if (result.insertId) {
         responseText += `插入ID: ${result.insertId}\n`;
       }
-      
+
       if (result.data) {
         responseText += `\n结果:\n`;
         responseText += JSON.stringify(result.data, null, 2);
@@ -535,7 +535,7 @@ class MCPMySQLServer {
       };
     }
   }
-  
+
   /**
    * 处理导入OpenAPI数据到Apifox的请求
    * @param {Object} args - 请求参数
@@ -543,12 +543,12 @@ class MCPMySQLServer {
    */
   async handleImportOpenAPIToApifox(args) {
     let { input, projectId, apiKey} = args;
-    
+
     try {
       let inputData;
       let isDirectory = false;
       let isFile = false;
-      
+
       // 标准化路径分隔符，统一使用系统默认分隔符
       if (input.startsWith('file#') || input.startsWith('dir#')) {
         const prefix = input.startsWith('file#') ? 'file#' : 'dir#';
@@ -559,7 +559,7 @@ class MCPMySQLServer {
         // 将路径中的正斜杠和反斜杠统一为系统默认分隔符
         input = input.replace(/\\/g, path.sep).replace(/\//g, path.sep);
       }
-      
+
       // 检查是否需要处理前缀
       if (input.startsWith('file#')) {
         // 处理文件前缀
@@ -582,13 +582,13 @@ class MCPMySQLServer {
           // 不是有效路径，当作字符串处理
         }
       }
-      
+
       if (isFile) {
         // 处理单个文件
         try {
           const fileContent = fs.readFileSync(input, 'utf8');
           inputData = fileContent;
-          
+
           const result = await this.importSingleOpenAPI(inputData, projectId, apiKey);
           return {
             content: [
@@ -613,7 +613,7 @@ class MCPMySQLServer {
         // 处理目录中的所有json文件（包括子目录）
         try {
           const jsonFiles = this.getAllJsonFiles(input);
-          
+
           if (jsonFiles.length === 0) {
             return {
               content: [
@@ -625,10 +625,10 @@ class MCPMySQLServer {
               isError: true
             };
           }
-          
+
           const results = [];
           const failedFiles = [];
-          
+
           for (const filePath of jsonFiles) {
             try {
               const fileContent = fs.readFileSync(filePath, 'utf8');
@@ -648,9 +648,9 @@ class MCPMySQLServer {
               });
             }
           }
-          
+
           let responseText = `批量导入完成:\n`;
-          
+
           if (results.length > 0) {
             responseText += `成功导入的文件:\n`;
             results.forEach(r => {
@@ -658,14 +658,14 @@ class MCPMySQLServer {
             });
             responseText += `\n`;
           }
-          
+
           if (failedFiles.length > 0) {
             responseText += `导入失败的文件:\n`;
             failedFiles.forEach(f => {
               responseText += `✗ ${f.file} (${f.path}): ${f.error}\n`;
             });
           }
-          
+
           return {
             content: [
               {
@@ -702,7 +702,7 @@ class MCPMySQLServer {
     } catch (error) {
       let errorMessage = error.message;
       let errorData = {};
-      
+
       // 尝试提取API错误信息
       if (error.response && error.response.data) {
         errorData = error.response.data;
@@ -712,7 +712,7 @@ class MCPMySQLServer {
           errorMessage = error.response.data;
         }
       }
-      
+
       return {
         content: [
           {
@@ -724,7 +724,7 @@ class MCPMySQLServer {
       };
     }
   }
-  
+
   /**
    * 递归获取目录及其子目录中的所有JSON文件
    * @param {string} dirPath - 目录路径
@@ -732,15 +732,15 @@ class MCPMySQLServer {
    */
   getAllJsonFiles(dirPath) {
     const jsonFiles = [];
-    
+
     const scanDirectory = (currentPath) => {
       try {
         const items = fs.readdirSync(currentPath);
-        
+
         for (const item of items) {
           const fullPath = path.join(currentPath, item);
           const stats = fs.statSync(fullPath);
-          
+
           if (stats.isDirectory()) {
             // 递归扫描子目录
             scanDirectory(fullPath);
@@ -754,7 +754,7 @@ class MCPMySQLServer {
         console.warn(`无法访问目录: ${currentPath}, 错误: ${error.message}`);
       }
     };
-    
+
     scanDirectory(dirPath);
     return jsonFiles;
   }
@@ -768,24 +768,24 @@ class MCPMySQLServer {
    */
   async handleDownloadAPIs(args) {
     const { rootDir, projectId, apiKey } = args;
-    
+
     try {
       // 验证参数
       if (!rootDir || !projectId || !apiKey) {
         throw new Error('缺少必要参数: rootDir, projectId, apiKey');
       }
-      
+
       // 确保根目录存在
       if (!fs.existsSync(rootDir)) {
         fs.mkdirSync(rootDir, { recursive: true });
       }
-      
+
       // 调用Apifox API获取OpenAPI 3.1 JSON数据
       const openApiData = await this.downloadOpenAPIFromApifox(projectId, apiKey);
-      
+
       // 解析并创建对应文件
       await this.createFilesFromOpenAPI(openApiData, rootDir);
-      
+
       return {
         content: [
           {
@@ -794,13 +794,13 @@ class MCPMySQLServer {
           }
         ]
       };
-      
+
     } catch (error) {
       console.error('下载APIs失败:', error);
       throw new Error(`下载APIs失败: ${error.message}`);
     }
   }
-  
+
   /**
    * 从Apifox下载OpenAPI数据
    * @param {string} projectId - 项目ID
@@ -819,7 +819,7 @@ class MCPMySQLServer {
       "oasVersion": "3.1",
       "exportFormat": "JSON"
     };
-    
+
     let lastError;
     // 重试3次
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -835,27 +835,27 @@ class MCPMySQLServer {
             }
           }
         );
-        
+
         if (response.status !== 200) {
           throw new Error(`API请求失败: ${response.statusText}`);
         }
-        
+
         return response.data;
-        
+
       } catch (error) {
         lastError = error;
         console.error(`下载API数据失败 (尝试 ${attempt}/3):`, error.message);
-        
+
         if (attempt < 3) {
           // 等待1秒后重试
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
     }
-    
+
     throw new Error(`下载API数据失败，已重试3次: ${lastError.message}`);
   }
-  
+
   /**
    * 安全处理文件名，转码特殊字符
    * @param {string} filename - 原始文件名
@@ -874,12 +874,12 @@ class MCPMySQLServer {
       '>': '＞',        // 全角大于号
       '|': '｜'         // 全角竖线
     };
-    
+
     let safeName = filename;
     for (const [char, replacement] of Object.entries(charMap)) {
       safeName = safeName.replace(new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
     }
-    
+
     return safeName;
   }
 
@@ -897,7 +897,7 @@ class MCPMySQLServer {
           const summary = methodData.summary || `${method}_${pathKey.replace(/[^a-zA-Z0-9]/g, '_')}`;
           const safeFileName = this.sanitizeFileName(summary);
           const fileName = `${safeFileName}.json`;
-          
+
           // 获取tags作为目录结构
           let targetDir = rootDir;
           if (methodData.tags && methodData.tags.length > 0) {
@@ -906,14 +906,14 @@ class MCPMySQLServer {
               targetDir = path.join(targetDir, tag);
             }
           }
-          
+
           // 确保目录存在
           if (!fs.existsSync(targetDir)) {
             fs.mkdirSync(targetDir, { recursive: true });
           }
-          
+
           const filePath = path.join(targetDir, fileName);
-          
+
           // 构建完整的OpenAPI结构，但paths中只包含当前API
           const apiData = {
             openapi: openApiData.openapi,
@@ -926,17 +926,17 @@ class MCPMySQLServer {
             },
             components: openApiData.components,
             security: openApiData.security,
-            tags: openApiData.tags,
+            // tags: openApiData.tags,
             externalDocs: openApiData.externalDocs
           };
-          
+
           // 移除undefined的字段
           Object.keys(apiData).forEach(key => {
             if (apiData[key] === undefined) {
               delete apiData[key];
             }
           });
-          
+
           fs.writeFileSync(filePath, JSON.stringify(apiData, null, 2), 'utf8');
         }
       }
@@ -955,7 +955,7 @@ class MCPMySQLServer {
     const requestData = {
       input: inputData
     };
-    
+
     // 发送请求到Apifox API
     const response = await axios.post(
       `https://api.apifox.com/v1/projects/${projectId}/import-openapi?locale=zh-CN`,
