@@ -12,6 +12,7 @@ const {
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const parseCurl = require('parse-curl');
 
 const DatabaseManager = require('./database');
 const SQLValidator = require('./validators');
@@ -160,6 +161,20 @@ class MCPMySQLServer {
               },
               required: ["rootDir", "projectId", "apiKey"]
             }
+          },
+          {
+            name: "run_curl",
+            description: "解析并执行curl命令，返回HTTP请求结果",
+            inputSchema: {
+              type: "object",
+              properties: {
+                curl: {
+                  type: "string",
+                  description: "curl命令字符串，例如：curl -X GET https://api.example.com/users"
+                }
+              },
+              required: ["curl"]
+            }
           }
         ]
       };
@@ -191,6 +206,9 @@ class MCPMySQLServer {
 
           case "download_apis":
             return await this.handleDownloadAPIs(args);
+
+          case "run_curl":
+            return await this.handleRunCurl(args);
 
           default:
             throw new Error(`未知的工具: ${name}`);
@@ -977,6 +995,64 @@ class MCPMySQLServer {
       return response.data;
     } else {
       throw new Error(`导入失败: ${response.statusText}`);
+    }
+  }
+
+  /**
+   * 处理curl命令执行请求
+   * @param {Object} args - 请求参数
+   * @returns {Object} 执行结果
+   */
+  async handleRunCurl(args) {
+    try {
+      const { curl } = args;
+      
+      if (typeof curl !== 'string') {
+        throw new TypeError(`Expected String, Found ${typeof curl}`);
+      }
+
+      // 解析curl命令
+      const parsed = parseCurl(curl);
+      
+      // 构建axios请求配置
+      const requestConfig = {
+        method: parsed.method || 'GET',
+        url: parsed.url,
+        headers: parsed.header || {},
+      };
+
+      // 如果有请求体数据
+      if (parsed.body) {
+        requestConfig.data = parsed.body;
+      }
+
+      // 执行HTTP请求
+      const response = await axios(requestConfig);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              data: response.data
+            }, null, 2)
+          }
+        ]
+      };
+      
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `curl执行失败: ${error.message}`
+          }
+        ],
+        isError: true
+      };
     }
   }
 

@@ -35,8 +35,8 @@
          - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
          - 接口文档管理规范(注意必须在明确"创建/更新接口文档"时才操作)：
             - 使用 import_openapi 工具导入，项目信息：
-               - 项目ID: [apiFox项目id]
-               - API密钥: [apiFox密钥]
+               - 项目ID: <apiFox项目id>
+               - API密钥: <apiFox密钥>
                - 保存接口根路径: `.apiDoc`目录
             - 接口文件规范：
                - 文件位置在保存接口根路径下
@@ -73,3 +73,15 @@
 
 **功能说明：**
 - 下载完整的OpenAPI 3.1规范文档
+
+### run_curl
+解析并执行curl命令，返回HTTP请求结果。
+
+**参数：**
+- `curl`: curl命令字符串
+
+**功能说明：**
+- 自动解析curl命令中的URL、HTTP方法、请求头、请求体等信息
+- 使用axios执行实际的HTTP请求
+- 返回完整的响应信息，包括状态码、响应头和响应数据
+- 支持所有标准的curl参数和选项
