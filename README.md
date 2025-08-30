@@ -5,32 +5,24 @@
 - 在 Mysql 数据库执行 SQL
 - 添加接口文档到 Apifox
 - 从 Apifox 下载所有API到本地文件
+- 解析并执行 curl 命令
 
 ## 安装与使用
-
-1. 克隆项目
-   ```bash
-   git clone https://github.com/327100395/mysql-mcp.git
-   cd mysql-mcp
-   ```
-2. 安装依赖
-   ```bash
-   npm install
-   ```
-3. 配置MCP服务
+1. 配置MCP服务
    ```json
     {
       "mcpServers": {
-      "mysql": {
-        "command": "node",
-        "args": [
-              "<工具路径>/src/index.js"
+        "mysql-apifox": {
+          "command": "npx",
+          "args": [
+              "-y",
+              "mcp-mysql-apifox"
           ]
         }
       }
     }
    ```
-   4. 建议在项目定义下面规则
+2. 建议在项目规则中定义
       ```md
          - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
          - 接口文档管理规范(注意必须在明确"创建/更新接口文档"时才操作)：
@@ -82,6 +74,5 @@
 
 **功能说明：**
 - 自动解析curl命令中的URL、HTTP方法、请求头、请求体等信息
-- 使用axios执行实际的HTTP请求
 - 返回完整的响应信息，包括状态码、响应头和响应数据
 - 支持所有标准的curl参数和选项

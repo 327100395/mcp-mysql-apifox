@@ -441,10 +441,6 @@ class MCPMySQLServer {
       // 启动MCP服务器
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-
-      console.log(`✓ MCP MySQL Server 启动成功`);
-      console.log(`服务器名称: ${config.mcp.name}`);
-      console.log(`服务器版本: ${config.mcp.version}`);
     } catch (error) {
       console.error('✗ MCP服务器启动失败:', error.message);
       process.exit(1);
@@ -769,7 +765,7 @@ class MCPMySQLServer {
         }
       } catch (error) {
         // 忽略无法访问的目录
-        console.warn(`无法访问目录: ${currentPath}, 错误: ${error.message}`);
+          // console.warn(`无法访问目录: ${currentPath}, 错误: ${error.message}`);
       }
     };
 
@@ -814,7 +810,7 @@ class MCPMySQLServer {
       };
 
     } catch (error) {
-      console.error('下载APIs失败:', error);
+        // console.error('下载APIs失败:', error);
       throw new Error(`下载APIs失败: ${error.message}`);
     }
   }
@@ -862,7 +858,7 @@ class MCPMySQLServer {
 
       } catch (error) {
         lastError = error;
-        console.error(`下载API数据失败 (尝试 ${attempt}/3):`, error.message);
+          // console.error(`下载API数据失败 (尝试 ${attempt}/3):`, error.message);
 
         if (attempt < 3) {
           // 等待1秒后重试
@@ -1061,7 +1057,7 @@ class MCPMySQLServer {
    */
   async stop() {
     await this.dbManager.close();
-    console.log('✓ MCP服务器已停止');
+      // console.log('✓ MCP服务器已停止');
   }
 }
 

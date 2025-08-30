@@ -72,7 +72,6 @@ class DatabaseManager {
       
       this.isConnected = true;
       this.currentConfig = dsnInfo;
-      console.log('✓ 数据库连接成功');
       
       return {
         success: true,
@@ -168,7 +167,6 @@ class DatabaseManager {
       
       this.isConnected = true;
       this.currentConfig = { ...dbConfig };
-      console.log('✓ 数据库连接成功');
       
       return {
         success: true,
@@ -297,7 +295,6 @@ class DatabaseManager {
     if (this.pool) {
       await this.pool.end();
       this.isConnected = false;
-      console.log('✓ 数据库连接已关闭');
     }
   }
 
