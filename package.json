@@ -1,6 +1,6 @@
 {
   "name": "mcp-mysql-apifox",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "src/index.js",
   "bin": {
     "mcp-mysql-apifox": "src/index.js"
@@ -12,6 +12,10 @@
   "author": "",
   "license": "ISC",
   "description": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/327100395/mcp-mysql-apifox"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",
     "axios": "^1.11.0",
