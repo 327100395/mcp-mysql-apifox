@@ -35,6 +35,23 @@ class MCPMySQLServer {
   }
 
   /**
+   * 格式化响应为统一的JSON格式
+   * @param {string} status - success 或 fail
+   * @param {string} res - 输出具体内容
+   * @returns {Object} 格式化后的响应
+   */
+  formatResponse(status, res) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ status, res })
+        }
+      ]
+    };
+  }
+
+  /**
    * 设置MCP服务器处理器
    */
   setupHandlers() {
@@ -90,13 +107,6 @@ class MCPMySQLServer {
                 sql: {
                   type: "string",
                   description: "要执行的SQL语句,执行失败重试2次"
-                },
-                params: {
-                  type: "array",
-                  description: "SQL查询参数（可选）",
-                  items: {
-                    type: ["string", "number", "boolean", "null"]
-                  }
                 }
               },
               required: ["dsn", "sql"]
@@ -214,15 +224,7 @@ class MCPMySQLServer {
             throw new Error(`未知的工具: ${name}`);
         }
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `错误: ${error.message}`
-            }
-          ],
-          isError: true
-        };
+        return this.formatResponse("fail", `${error.message}`);
       }
     });
   }
@@ -238,29 +240,13 @@ class MCPMySQLServer {
     // 验证SQL语句
     const sqlValidation = this.validator.validateSQL(sql);
     if (!sqlValidation.isValid) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `SQL验证失败: ${sqlValidation.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${sqlValidation.error}`);
     }
 
     // 验证参数
     const paramsValidation = this.validator.validateParams(params);
     if (!paramsValidation.isValid) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `参数验证失败: ${paramsValidation.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${paramsValidation.error}`);
     }
 
     // 执行SQL
@@ -280,24 +266,9 @@ class MCPMySQLServer {
         responseText += JSON.stringify(result.data, null, 2);
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
-      };
+      return this.formatResponse("success", responseText);
     } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `✗ SQL执行失败: ${result.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${result.error}`);
     }
   }
 
@@ -321,24 +292,9 @@ class MCPMySQLServer {
         responseText += `\n`;
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
-      };
+      return this.formatResponse("success", responseText);
     } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `获取表信息失败: ${result.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${result.error}`);
     }
   }
 
@@ -353,15 +309,7 @@ class MCPMySQLServer {
     // 验证连接参数
     const configValidation = this.validator.validateDSN(dsn);
     if (!configValidation.isValid) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `连接参数验证失败: ${configValidation.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${configValidation.error}`);
     }
 
     // 连接数据库
@@ -384,24 +332,9 @@ class MCPMySQLServer {
         responseText += `数据库: ${result.connectionInfo.database}\n`;
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
-      };
+      return this.formatResponse("success", responseText);
     } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `✗ 数据库连接失败: ${result.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${result.error}`);
     }
   }
 
@@ -413,23 +346,9 @@ class MCPMySQLServer {
     const connectionInfo = this.dbManager.getConnectionInfo();
 
     if (connectionInfo.connected) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `数据库连接状态: 已连接\n主机: ${connectionInfo.host}\n端口: ${connectionInfo.port}\n用户: ${connectionInfo.user}\n数据库: ${connectionInfo.database}`
-          }
-        ]
-      };
+      return this.formatResponse("success", `数据库连接状态: 已连接\n主机: ${connectionInfo.host}\n端口: ${connectionInfo.port}\n用户: ${connectionInfo.user}\n数据库: ${connectionInfo.database}`);
     } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `数据库连接状态: 未连接`
-          }
-        ]
-      };
+      return this.formatResponse("success", `数据库连接状态: 未连接`);
     }
   }
 
@@ -442,7 +361,7 @@ class MCPMySQLServer {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
     } catch (error) {
-      console.error('✗ MCP服务器启动失败:', error.message);
+      
       process.exit(1);
     }
   }
@@ -455,98 +374,86 @@ class MCPMySQLServer {
   async handleExecuteMySQL(args) {
     const { dsn, sql, params = [] } = args;
 
+    
+
     // 验证DSN
     const dsnValidation = this.validator.validateDSN(dsn);
     if (!dsnValidation.isValid) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `连接参数验证失败: ${dsnValidation.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${dsnValidation.error}`);
     }
 
     // 验证SQL语句
     const sqlValidation = this.validator.validateSQL(sql);
     if (!sqlValidation.isValid) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `SQL验证失败: ${sqlValidation.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${sqlValidation.error}`);
     }
 
     // 验证参数
     const paramsValidation = this.validator.validateParams(params);
     if (!paramsValidation.isValid) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `参数验证失败: ${paramsValidation.error}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `${paramsValidation.error}`);
     }
 
-    // 连接数据库
-    const connectResult = await this.dbManager.connectWithDSN(dsn);
-    if (!connectResult.success) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `✗ 数据库连接失败: ${connectResult.error}`
-          }
-        ],
-        isError: true
-      };
-    }
-
-    // 执行SQL
-    const result = await this.dbManager.executeQuery(sql, params);
-
-    if (result.success) {
-      let responseText = `✓ 成功执行SQL\n`;
-      responseText += `DSN: ${dsn.replace(/:[^:]*@/, ':******@')}\n`;
-      responseText += `执行时间: ${result.executionTime}ms\n`;
-      responseText += `影响行数: ${result.rowCount}\n`;
-
-      if (result.insertId) {
-        responseText += `插入ID: ${result.insertId}\n`;
+    try {
+      
+      
+      // 确保每次都重新连接：先关闭现有连接
+      if (this.dbManager.isConnectionActive()) {
+        await this.dbManager.close();
+        
       }
 
-      if (result.data) {
-        responseText += `\n结果:\n`;
-        responseText += JSON.stringify(result.data, null, 2);
+      // 重新连接数据库
+      const connectResult = await this.dbManager.connectWithDSN(dsn);
+      if (!connectResult.success) {
+        return this.formatResponse("fail", `${connectResult.error}`);
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
-      };
-    } else {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `✗ SQL执行失败: ${result.error}`
-          }
-        ],
-        isError: true
-      };
+      
+
+      // 执行SQL
+      const result = await this.dbManager.executeQuery(sql, params);
+
+      // 执行完毕后立即关闭连接
+      
+      await this.dbManager.close();
+      
+
+      if (result.success) {
+        let responseText = `✓ 成功执行SQL\n`;
+        responseText += `DSN: ${dsn.replace(/:[^:]*@/, ':******@')}\n`;
+        responseText += `执行时间: ${result.executionTime}ms\n`;
+        responseText += `影响行数: ${result.rowCount}\n`;
+
+        if (result.insertId) {
+          responseText += `插入ID: ${result.insertId}\n`;
+        }
+
+        if (result.data) {
+          responseText += `\n结果:\n`;
+          responseText += JSON.stringify(result.data, null, 2);
+        }
+
+        
+
+        return this.formatResponse("success", responseText);
+      } else {
+        return this.formatResponse("fail", `${result.error}`);
+      }
+    } catch (error) {
+      
+      
+      // 确保在出错时也关闭连接
+      try {
+        if (this.dbManager.isConnectionActive()) {
+          await this.dbManager.close();
+          
+        }
+      } catch (closeError) {
+        
+      }
+
+      return this.formatResponse("fail", `${error.message}`);
     }
   }
 
@@ -604,24 +511,9 @@ class MCPMySQLServer {
           inputData = fileContent;
 
           const result = await this.importSingleOpenAPI(inputData, projectId, apiKey);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `✓ 文件 ${input} 导入成功`
-              }
-            ]
-          };
+          return this.formatResponse("success", `✓ 文件 ${input} 导入成功`);
         } catch (error) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `✗ 读取文件 ${input} 失败: ${error.message}`
-              }
-            ],
-            isError: true
-          };
+          return this.formatResponse("fail", `✗ 读取文件 ${input} 失败: ${error.message}`);
         }
       } else if (isDirectory) {
         // 处理目录中的所有json文件（包括子目录）
@@ -629,15 +521,7 @@ class MCPMySQLServer {
           const jsonFiles = this.getAllJsonFiles(input);
 
           if (jsonFiles.length === 0) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `✗ 目录 ${input} 及其子目录中没有找到json文件`
-                }
-              ],
-              isError: true
-            };
+            return this.formatResponse("fail", `✗ 目录 ${input} 及其子目录中没有找到json文件`);
           }
 
           const results = [];
@@ -680,38 +564,15 @@ class MCPMySQLServer {
             });
           }
 
-          return {
-            content: [
-              {
-                type: "text",
-                text: responseText
-              }
-            ],
-            isError: failedFiles.length > 0
-          };
+          return this.formatResponse(failedFiles.length > 0 ? "fail" : "success", responseText);
         } catch (error) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `✗ 读取目录 ${input} 失败: ${error.message}`
-              }
-            ],
-            isError: true
-          };
+          return this.formatResponse("fail", `✗ 读取目录 ${input} 失败: ${error.message}`);
         }
       } else {
         // 当作字符串处理
         inputData = input;
         const result = await this.importSingleOpenAPI(inputData, projectId, apiKey);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `✓ 导入成功`
-            }
-          ]
-        };
+        return this.formatResponse("success", `✓ 导入成功`);
       }
     } catch (error) {
       let errorMessage = error.message;
@@ -727,15 +588,7 @@ class MCPMySQLServer {
         }
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: `✗ OpenAPI数据导入失败: ${errorMessage}\n错误详情:\n${JSON.stringify(errorData, null, 2)}`
-          }
-        ],
-        isError: true
-      };
+      return this.formatResponse("fail", `✗ OpenAPI数据导入失败: ${errorMessage}\n错误详情:\n${JSON.stringify(errorData, null, 2)}`);
     }
   }
 
@@ -765,7 +618,6 @@ class MCPMySQLServer {
         }
       } catch (error) {
         // 忽略无法访问的目录
-          // console.warn(`无法访问目录: ${currentPath}, 错误: ${error.message}`);
       }
     };
 
@@ -810,7 +662,6 @@ class MCPMySQLServer {
       };
 
     } catch (error) {
-        // console.error('下载APIs失败:', error);
       throw new Error(`下载APIs失败: ${error.message}`);
     }
   }
@@ -858,7 +709,6 @@ class MCPMySQLServer {
 
       } catch (error) {
         lastError = error;
-          // console.error(`下载API数据失败 (尝试 ${attempt}/3):`, error.message);
 
         if (attempt < 3) {
           // 等待1秒后重试
@@ -1057,7 +907,6 @@ class MCPMySQLServer {
    */
   async stop() {
     await this.dbManager.close();
-      // console.log('✓ MCP服务器已停止');
   }
 }
 
