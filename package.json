@@ -1,6 +1,6 @@
 {
   "name": "mcp-mysql-apifox",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "main": "src/index.js",
   "bin": {
     "mcp-mysql-apifox": "src/index.js"

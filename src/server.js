@@ -370,27 +370,14 @@ class MCPMySQLServer {
 
         try {
 
-
-            // 确保每次都重新连接：先关闭现有连接
-            if (this.dbManager.isConnectionActive()) {
-                await this.dbManager.close();
-
-            }
-
             // 重新连接数据库
             const connectResult = await this.dbManager.connectWithDSN(dsn);
             if (!connectResult.success) {
                 return this.formatResponse("fail", `${connectResult.error}`);
             }
 
-
             // 执行SQL
-            const result = await this.dbManager.executeQuery(sql, params);
-
-            // 执行完毕后立即关闭连接
-
-            await this.dbManager.close();
-
+            const result = await this.dbManager.executeQuery(sql, params, connectResult.db);
 
             if (result.success) {
                 let executionTime = result.executionTime;
@@ -402,18 +389,6 @@ class MCPMySQLServer {
                 return this.formatResponse("fail", `${result.error}`);
             }
         } catch (error) {
-
-
-            // 确保在出错时也关闭连接
-            try {
-                if (this.dbManager.isConnectionActive()) {
-                    await this.dbManager.close();
-
-                }
-            } catch (closeError) {
-
-            }
-
             return this.formatResponse("fail", `${error.message}`);
         }
     }
