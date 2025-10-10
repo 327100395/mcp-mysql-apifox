@@ -36,6 +36,74 @@ class MCPMySQLServer {
     }
 
     /**
+     * 处理只读MySQL查询请求
+     * @param {Object} args - 请求参数
+     * @returns {Object} 查询结果
+     */
+    async handleExecuteMySQLReadonly(args) {
+        const {dsn, sql, params = []} = args;
+
+        // 验证DSN
+        const dsnValidation = this.validator.validateDSN(dsn);
+        if (!dsnValidation.isValid) {
+            return this.formatResponse("fail", `${dsnValidation.error}`);
+        }
+
+        // 验证只读SQL语句
+        const sqlValidation = this.validator.validateReadOnlySQL(sql);
+        if (!sqlValidation.isValid) {
+            return this.formatResponse("fail", `${sqlValidation.error}`);
+        }
+
+        // 验证参数
+        const paramsValidation = this.validator.validateParams(params);
+        if (!paramsValidation.isValid) {
+            return this.formatResponse("fail", `${paramsValidation.error}`);
+        }
+
+        try {
+            // 使用只读连接到数据库
+            const connectResult = await this.dbManager.connectWithDSNReadonly(dsn);
+            if (!connectResult.success) {
+                return this.formatResponse("fail", `${connectResult.error}`);
+            }
+
+            // 执行只读SQL
+            const result = await this.dbManager.executeQuery(sql, params, connectResult.db);
+
+            if (result.success) {
+                let executionTime = result.executionTime;
+                let rowCount = result.rowCount;
+                let data = result.data;
+
+                return this.formatResponse("success", {executionTime, rowCount, data});
+            } else {
+                // 检查是否是因为只读模式导致的错误
+                if (result.error && (
+                    result.error.includes('read-only') || 
+                    result.error.includes('READ ONLY') ||
+                    result.error.includes('read only') ||
+                    result.errno === 1290 || // MySQL read-only error
+                    result.sqlState === 'HY000'
+                )) {
+                    return this.formatResponse("fail", `数据库处于只读模式，无法执行写操作。请使用execute_mysql工具执行写操作。`);
+                }
+                return this.formatResponse("fail", `${result.error}`);
+            }
+        } catch (error) {
+            // 检查是否是只读相关的错误
+            if (error.message && (
+                error.message.includes('read-only') || 
+                error.message.includes('READ ONLY') ||
+                error.message.includes('read only')
+            )) {
+                return this.formatResponse("fail", `数据库处于只读模式，无法执行写操作。请使用execute_mysql工具执行写操作。`);
+            }
+            return this.formatResponse("fail", `${error.message}`);
+        }
+    }
+
+    /**
      * 格式化响应为统一的JSON格式
      * @param {string} status - success 或 fail
      * @param res - 输出具体内容
@@ -60,44 +128,9 @@ class MCPMySQLServer {
         this.server.setRequestHandler(ListToolsRequestSchema, async () => {
             return {
                 tools: [
-                    // {
-                    //   name: "connect_mysql",
-                    //   description: "连接到MySQL数据库",
-                    //   inputSchema: {
-                    //     type: "object",
-                    //     properties: {
-                    //       dsn: {
-                    //         type: "string",
-                    //         description: "MySQL数据库连接字符串，DSN格式：mysql://user:password@host:port/database"
-                    //       }
-                    //     },
-                    //     required: ["dsn"]
-                    //   }
-                    // },
-                    // {
-                    //   name: "execute_sql",
-                    //   description: "执行SQL语句（需要先连接数据库）",
-                    //   inputSchema: {
-                    //     type: "object",
-                    //     properties: {
-                    //       sql: {
-                    //         type: "string",
-                    //         description: "要执行的SQL语句"
-                    //       },
-                    //       params: {
-                    //         type: "array",
-                    //         description: "SQL查询参数（可选）",
-                    //         items: {
-                    //           type: ["string", "number", "boolean", "null"]
-                    //         }
-                    //       }
-                    //     },
-                    //     required: ["sql"]
-                    //   }
-                    // },
                     {
                         name: "execute_mysql",
-                        description: "执行mysql语句,使用前在规则定义DSN链接",
+                        description: "仅执行execute_mysql_readonly不支持的mysql语句,使用前读取规则或用户指定的DSN链接",
                         inputSchema: {
                             type: "object",
                             properties: {
@@ -108,6 +141,24 @@ class MCPMySQLServer {
                                 sql: {
                                     type: "string",
                                     description: "要执行的SQL语句,执行失败重试2次"
+                                }
+                            },
+                            required: ["dsn", "sql"]
+                        }
+                    },
+                    {
+                        name: "execute_mysql_readonly",
+                        description: "执行只读mysql语句(仅支持SELECT、SHOW、DESCRIBE等查询操作),使用前读取规则或用户指定的DSN链接",
+                        inputSchema: {
+                            type: "object",
+                            properties: {
+                                dsn: {
+                                    type: "string",
+                                    description: "MySQL数据库连接字符串，DSN格式：mysql://user:password@host:port/database"
+                                },
+                                sql: {
+                                    type: "string",
+                                    description: "要执行的只读SQL语句(SELECT、SHOW、DESCRIBE等),如果不是读操作将终止运行"
                                 }
                             },
                             required: ["dsn", "sql"]
@@ -131,7 +182,7 @@ class MCPMySQLServer {
                     // },
                     {
                         name: "import_openapi",
-                        description: "导入OpenAPI数据到Apifox,使用前在规则定义项目ID和API密钥,可导入json字符串/包含json文档的目录/json文件",
+                        description: "导入OpenAPI数据到Apifox,在用户明确生成api文档时使用,使用前读取规则或用户指定的项目ID和API密钥,可导入json字符串/包含json文档的目录/json文件",
                         inputSchema: {
                             type: "object",
                             properties: {
@@ -153,7 +204,7 @@ class MCPMySQLServer {
                     },
                     {
                         name: "download_apis",
-                        description: "从Apifox下载所有API到指定目录,可传递目录绝对路径、Apifox项目ID和API密钥",
+                        description: "从Apifox下载所有API到指定目录,可传递目录绝对路径、Apifox项目ID和API密钥(读取规则或用户指定的)",
                         inputSchema: {
                             type: "object",
                             properties: {
@@ -189,7 +240,7 @@ class MCPMySQLServer {
                     },
                     {
                         name: "check_completion",
-                        description: "检查当前任务是否完成,必须在当前任务没有超出上下文限制并且完成后,使用这个工具确认是否还有其他任务需要处理。",
+                        description: "必须在完成任务后调用一次确认是否还有其他任务需要处理,如果返回runNextTask继续任务。",
                         inputSchema: {
                             type: "object",
                             properties: {
@@ -215,6 +266,9 @@ class MCPMySQLServer {
 
                     case "execute_mysql":
                         return await this.handleExecuteMySQL(args);
+
+                    case "execute_mysql_readonly":
+                        return await this.handleExecuteMySQLReadonly(args);
 
                     case "get_tables_info":
                         return await this.handleGetTablesInfo();
@@ -860,8 +914,8 @@ class MCPMySQLServer {
         return new Promise((resolve) => {
             dialog.showConfirmationDialog("当前任务已处理完成，如有其它任务请回复", (code, retVal) => {
                 if (retVal) {
-                    resolve(this.formatResponse("success", {
-                        nextTask: retVal
+                    resolve(this.formatResponse("runNextTask", {
+                        task: retVal
                     }));
                 } else {
                     resolve(this.formatResponse("success",{}));

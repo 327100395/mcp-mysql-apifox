@@ -18,6 +18,67 @@ class SQLValidator {
     }
   
     /**
+     * 验证只读SQL语句的安全性
+     * @param {string} sql - 要验证的SQL语句
+     * @returns {Object} 验证结果
+     */
+    validateReadOnlySQL(sql) {
+      if (!sql || typeof sql !== 'string') {
+        return {
+          isValid: false,
+          error: 'SQL语句不能为空且必须是字符串'
+        };
+      }
+
+      const cleanSQL = sql.toLowerCase().trim();
+      
+      // 定义允许的只读操作
+      const readOnlyOperations = [
+        'select', 'show', 'describe', 'desc', 'explain', 
+        'analyze table', 'check table', 'checksum table'
+      ];
+      
+      // 检查是否为只读操作
+      let isReadOnly = false;
+      for (const operation of readOnlyOperations) {
+        if (cleanSQL.startsWith(operation)) {
+          isReadOnly = true;
+          break;
+        }
+      }
+      
+      if (!isReadOnly) {
+        return {
+          isValid: false,
+          error: '失败,只允许执行只读操作(SELECT、SHOW、DESCRIBE、EXPLAIN等)，非读操作请使用execute_mysql工具执行'
+        };
+      }
+      
+      // 检查是否包含写操作关键词
+      const writeKeywords = [
+        'insert', 'update', 'delete', 'drop', 'create', 'alter', 
+        'truncate', 'replace', 'grant', 'revoke', 'set', 'call',
+        'into outfile', 'into dumpfile', 'load data', 'load_file'
+      ];
+      
+      for (const keyword of writeKeywords) {
+        if (cleanSQL.includes(keyword)) {
+          return {
+            isValid: false,
+            error: '失败,只允许执行只读操作(SELECT、SHOW、DESCRIBE、EXPLAIN等)，非读操作请使用execute_mysql工具执行'
+          };
+        }
+      }
+
+      const operation = this.getOperationType(cleanSQL);
+
+      return {
+        isValid: true,
+        operation: operation
+      };
+    }
+
+    /**
      * 验证SQL语句的安全性
      * @param {string} sql - 要验证的SQL语句
      * @returns {Object} 验证结果

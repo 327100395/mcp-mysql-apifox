@@ -14,6 +14,67 @@ class DatabaseManager {
     }
 
     /**
+     * 使用DSN连接到MySQL数据库（只读模式）
+     * @param {string} dsn - 数据库连接字符串，格式：mysql://user:password@host:port/database
+     * @returns {Object} 连接结果
+     */
+    async connectWithDSNReadonly(dsn) {
+        try {
+            // 解析DSN
+            const dsnInfo = this.parseDSN(dsn);
+            if (!dsnInfo) {
+                return {
+                    success: false,
+                    error: 'DSN格式无效'
+                };
+            }
+
+            // 创建只读连接池，添加只读配置
+            const readonlyConfig = {
+                ...dsnInfo,
+                // 设置只读模式
+                flags: '+READ_ONLY',
+                // 或者使用 MySQL 8.0+ 的只读用户配置
+                // 这里我们通过连接参数来实现只读
+                connectionLimit: 10,
+                acquireTimeout: 60000,
+                timeout: 60000,
+                reconnect: true,
+                multipleStatements: false,
+                // 添加只读相关的连接参数
+                ssl: false,
+                // 设置事务隔离级别为只读
+                initSql: "SET SESSION TRANSACTION READ ONLY"
+            };
+
+            let db = mysql.createPool(readonlyConfig);
+
+            // 测试连接并验证只读模式
+            try {
+                const connection = await db.getConnection();
+                // 设置会话为只读模式
+                await connection.execute("SET SESSION TRANSACTION READ ONLY");
+                await connection.execute("SET SESSION read_only = 1");
+                connection.release();
+            } catch (setupError) {
+                // 如果无法设置只读模式，仍然创建连接但记录警告
+                console.warn('无法设置只读模式，将依赖应用层验证:', setupError.message);
+            }
+
+            return {
+                success: true,
+                db,
+                readonly: true
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
      * 初始化数据库连接池
      */
     async initialize() {
