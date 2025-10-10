@@ -13,6 +13,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const parseCurl = require('parse-curl');
+const dialog = require('./dialog');
 
 const DatabaseManager = require('./database');
 const SQLValidator = require('./validators');
@@ -185,6 +186,16 @@ class MCPMySQLServer {
                             },
                             required: ["curl"]
                         }
+                    },
+                    {
+                        name: "check_completion",
+                        description: "检查当前任务是否完成,必须在当前任务没有超出上下文限制并且完成后,使用这个工具确认是否还有其他任务需要处理。",
+                        inputSchema: {
+                            type: "object",
+                            properties: {
+                            },
+                            required: []
+                        }
                     }
                 ]
             };
@@ -219,6 +230,9 @@ class MCPMySQLServer {
 
                     case "run_curl":
                         return await this.handleRunCurl(args);
+
+                    case "check_completion":
+                        return await this.handleCheckCompletion(args);
 
                     default:
                         throw new Error(`未知的工具: ${name}`);
@@ -836,6 +850,22 @@ class MCPMySQLServer {
                 isError: true
             };
         }
+    }
+
+    /**
+     * 检查任务是否完成
+     * @returns {Object} 检查结果
+     */
+    async handleCheckCompletion(args) {
+        return new Promise((resolve) => {
+            dialog.showConfirmationDialog((code, retVal) => {
+                if (retVal) {
+                    resolve(this.formatResponse("success", retVal));
+                } else {
+                    resolve(this.formatResponse("success", "已完成"));
+                }
+            });
+        });
     }
 
     /**
