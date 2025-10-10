@@ -1,6 +1,6 @@
 {
   "name": "mcp-mysql-apifox",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "main": "src/index.js",
   "bin": {
     "mcp-mysql-apifox": "src/index.js"
@@ -19,13 +19,15 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",
     "axios": "^1.11.0",
+    "chardet": "^2.1.0",
     "cors": "^2.8.5",
-    "dialog-node": "^0.2.1",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.1.0",
+    "iconv-lite": "^0.7.0",
     "mysql2": "^3.14.1",
+    "native-prompt": "file:./native-prompt",
     "parse-curl": "^0.2.6"
   },
   "devDependencies": {

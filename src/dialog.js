@@ -1,16 +1,24 @@
-const dialog = require('dialog-node');
-const iconv = require('iconv-lite');
+const nativePrompt = require('native-prompt');
 
-function showConfirmationDialog(message, callback) {
-    // 将回调函数包装，处理编码问题
-    const encodingCallback = (code, retVal, stderr) => {
-        // 如果返回值不为空，进行编码转换
-        if (retVal) {
-            retVal = iconv.decode(Buffer.from(retVal, 'binary'), 'cp936');
-        }
-        callback(code, retVal, stderr);
-    };
-    dialog.entry(message, '确认', 0, encodingCallback);
+async function showConfirmationDialog(message, callback) {
+    try {
+        const result1 = await nativePrompt(message, '确认', { defaultText: '' });
+        // 如果结果是base64编码，先解码
+        const decodedResult1 = base64Decode(result1);
+        callback(0, decodedResult1, null);
+    } catch (error) {
+        callback(0, '', null);
+    }
+}
+
+function base64Decode(str) {
+    if (!str) return str;
+    try {
+        return Buffer.from(str, 'base64').toString('utf8');
+    } catch (error) {
+        console.warn('Base64解码失败，返回原始字符串:', error.message);
+        return str;
+    }
 }
 
 module.exports = {
