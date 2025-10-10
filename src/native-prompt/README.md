@@ -39,8 +39,9 @@ prompt (title, body, options)
 ## Examples
 ### Importing
 #### Javascript
+
 ```js
-const prompt = require('native-prompt')
+const prompt = require('src/native-prompt/dist/index')
 ```
 #### Typescript
 ```ts
