@@ -2,7 +2,7 @@ const nativePrompt = require('native-prompt');
 
 async function showConfirmationDialog(message, callback) {
     try {
-        const result1 = await nativePrompt(message, '确认', { defaultText: '' });
+        const result1 = await nativePrompt(message, message, { defaultText: '' });
         // 如果结果是base64编码，先解码
         const decodedResult1 = base64Decode(result1);
         callback(0, decodedResult1, null);

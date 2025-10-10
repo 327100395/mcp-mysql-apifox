@@ -864,7 +864,7 @@ class MCPMySQLServer {
                         nextTask: retVal
                     }));
                 } else {
-                    resolve(this.formatResponse("success", "已完成"));
+                    resolve(this.formatResponse("success",{}));
                 }
             });
         });
