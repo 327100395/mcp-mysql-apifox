@@ -26,15 +26,15 @@
       ```md
          - 如果要使用mysql相关功能,使用该DSN: `mysql://user:password@host:port/database`
          - 接口文档管理规范(注意必须在明确"创建/更新接口文档"时才操作)：
-            - 使用 import_openapi 工具导入，项目信息：
-               - 项目ID: <apiFox项目id>
-               - API密钥: <apiFox密钥>
-               - 保存接口根路径: `.apiDoc`目录
-            - 接口文件规范：
-               - 文件位置在保存接口根路径下
-               - 目录结构：按 tags 属性数组顺序创建子目录
-               - 文件命名：使用 summary 属性值，格式为 JSON
-               - 每次仅允许导入单个接口文件。
+         - 使用 import_openapi 工具导入，项目信息：
+            - 项目ID: <apiFox项目id>
+            - API密钥: <apiFox密钥>
+            - 保存接口根路径: `.apiDoc`目录
+         - 接口文件规范：
+            - 文件位置在保存接口根路径下
+            - 目录结构：按 tags 属性数组顺序创建子目录
+            - 文件命名：使用 summary 属性值，格式为 JSON
+            - 每次仅允许导入单个接口文件。
       ```
 
 ## 可用命令
