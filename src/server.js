@@ -86,7 +86,7 @@ class MCPMySQLServer {
                     result.errno === 1290 || // MySQL read-only error
                     result.sqlState === 'HY000'
                 )) {
-                    return this.formatResponse("fail", `数据库处于只读模式，无法执行写操作。请使用execute_mysql工具执行写操作。`);
+                    return this.formatResponse("fail", `数据库处于只读模式，无法执行写操作。请使用execute_mysql_only工具执行写操作。`);
                 }
                 return this.formatResponse("fail", `${result.error}`);
             }
@@ -97,7 +97,7 @@ class MCPMySQLServer {
                 error.message.includes('READ ONLY') ||
                 error.message.includes('read only')
             )) {
-                return this.formatResponse("fail", `数据库处于只读模式，无法执行写操作。请使用execute_mysql工具执行写操作。`);
+                return this.formatResponse("fail", `数据库处于只读模式，无法执行写操作。请使用execute_mysql_only工具执行写操作。`);
             }
             return this.formatResponse("fail", `${error.message}`);
         }
@@ -129,7 +129,7 @@ class MCPMySQLServer {
             return {
                 tools: [
                     {
-                        name: "execute_mysql",
+                        name: "execute_mysql_only",
                         description: "仅执行execute_mysql_readonly不支持的mysql语句,使用前读取规则或用户指定的DSN链接",
                         inputSchema: {
                             type: "object",
@@ -264,7 +264,7 @@ class MCPMySQLServer {
                     case "execute_sql":
                         return await this.handleExecuteSQL(args);
 
-                    case "execute_mysql":
+                    case "execute_mysql_only":
                         return await this.handleExecuteMySQL(args);
 
                     case "execute_mysql_readonly":
