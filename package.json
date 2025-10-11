@@ -27,7 +27,6 @@
     "helmet": "^8.1.0",
     "iconv-lite": "^0.7.0",
     "mysql2": "^3.14.1",
-    "native-prompt": "file:./src/native-prompt",
     "parse-curl": "^0.2.6"
   },
   "devDependencies": {

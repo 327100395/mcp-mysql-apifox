@@ -1,4 +1,4 @@
-const nativePrompt = require('native-prompt');
+const nativePrompt = require('./native-prompt/dist/index.js');
 
 async function showConfirmationDialog(message, callback) {
     try {
