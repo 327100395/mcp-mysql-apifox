@@ -2,12 +2,29 @@ const nativePrompt = require('./native-prompt/dist/index.js');
 
 async function showConfirmationDialog(message, callback) {
     try {
-        const result1 = await nativePrompt(message, message, { defaultText: '' });
+        // 创建一个10分钟超时的Promise
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => {
+                reject(new Error('TIMEOUT'));
+            }, 10 * 60 * 1000); // 10分钟
+        });
+
+        // 使用Promise.race来实现超时机制
+        const result1 = await Promise.race([
+            nativePrompt(message, message, { defaultText: '' }),
+            timeoutPromise
+        ]);
+        
         // 如果结果是base64编码，先解码
         const decodedResult1 = base64Decode(result1);
         callback(0, decodedResult1, null);
     } catch (error) {
-        callback(0, '', null);
+        if (error.message === 'TIMEOUT') {
+            // 超时情况，返回特殊标识
+            callback(0, null, 'TIMEOUT');
+        } else {
+            callback(0, '', null);
+        }
     }
 }
 

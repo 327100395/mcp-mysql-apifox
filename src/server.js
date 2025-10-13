@@ -912,8 +912,11 @@ class MCPMySQLServer {
      */
     async handleCheckCompletion(args) {
         return new Promise((resolve) => {
-            dialog.showConfirmationDialog("当前任务已处理完成，如有其它任务请回复", (code, retVal) => {
-                if (retVal) {
+            dialog.showConfirmationDialog("当前任务已处理完成，如有其它任务请回复", (code, retVal, error) => {
+                if (error === 'TIMEOUT') {
+                    // 超时情况，返回超时消息
+                    resolve(this.formatResponse("fail", "超时,请重新调用check_completion"));
+                } else if (retVal) {
                     resolve(this.formatResponse("runNextTask", {
                         task: retVal
                     }));
