@@ -6,7 +6,7 @@ async function showConfirmationDialog(message, callback) {
         const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => {
                 reject(new Error('TIMEOUT'));
-            }, 10 * 60 * 1000); // 10分钟
+            }, 5 * 60 * 1000); // 5分钟
         });
 
         // 使用Promise.race来实现超时机制

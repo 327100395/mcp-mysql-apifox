@@ -50,10 +50,10 @@ class MCPMySQLServer {
         }
 
         // 验证只读SQL语句
-        const sqlValidation = this.validator.validateReadOnlySQL(sql);
-        if (!sqlValidation.isValid) {
-            return this.formatResponse("fail", `${sqlValidation.error}`);
-        }
+        // const sqlValidation = this.validator.validateReadOnlySQL(sql);
+        // if (!sqlValidation.isValid) {
+        //     return this.formatResponse("fail", `${sqlValidation.error}`);
+        // }
 
         // 验证参数
         const paramsValidation = this.validator.validateParams(params);
