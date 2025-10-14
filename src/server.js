@@ -917,15 +917,15 @@ class MCPMySQLServer {
             dialog.showConfirmationDialog("当前任务已处理完成，如有其它任务请回复", (code, retVal, error) => {
                 if (retVal == -1) {
                     // 超时情况，返回超时消息
-                    resolve(this.formatResponse("runNextTask", {
+                    resolve(this.formatResponse("未完成,继续任务", {
                         task: '继续调用check_completion工具'
                     }));
                 } else if (retVal) {
-                    resolve(this.formatResponse("runNextTask", {
+                    resolve(this.formatResponse("未完成,继续任务", {
                         task: retVal
                     }));
                 } else {
-                    resolve(this.formatResponse("success",{}));
+                    resolve(this.formatResponse("已完成",{}));
                 }
             }, timeout);
         });
