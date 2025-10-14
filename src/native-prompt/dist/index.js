@@ -44,11 +44,12 @@ var platform = platform_check_1.default();
 module.exports = function (title, body, options) {
     if (options === void 0) { options = {}; }
     return __awaiter(this, void 0, void 0, function () {
-        var defaultText, _a;
+        var defaultText, timeout, _a;
         return __generator(this, function (_b) {
             switch (_b.label) {
                 case 0:
                     defaultText = options.defaultText || "";
+                    timeout = options.timeout || 0; // 0表示无超时
                     _a = platform;
                     switch (_a) {
                         case 'win32': return [3, 1];
@@ -58,13 +59,13 @@ module.exports = function (title, body, options) {
                     return [3, 9];
                 case 1:
                     if (!options.mask) return [3, 3];
-                    return [4, platforms_1.win32.displayMask(title, body, defaultText)];
+                    return [4, platforms_1.win32.displayMask(title, body, defaultText, timeout)];
                 case 2: return [2, _b.sent()];
-                case 3: return [4, platforms_1.win32.displayBox(title, body, defaultText)];
+                case 3: return [4, platforms_1.win32.displayBox(title, body, defaultText, timeout)];
                 case 4: return [2, _b.sent()];
-                case 5: return [4, platforms_1.linux(title, body, options.mask, defaultText)];
+                case 5: return [4, platforms_1.linux(title, body, options.mask, defaultText, timeout)];
                 case 6: return [2, _b.sent()];
-                case 7: return [4, platforms_1.darwin(title, body, options.mask, defaultText)];
+                case 7: return [4, platforms_1.darwin(title, body, options.mask, defaultText, timeout)];
                 case 8: return [2, _b.sent()];
                 case 9: return [2];
             }

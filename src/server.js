@@ -20,7 +20,7 @@ const SQLValidator = require('./validators');
 const config = require('./config');
 
 class MCPMySQLServer {
-    constructor() {
+    constructor(timeout = 300000) {
         this.server = new Server({
             name: config.mcp.name,
             version: config.mcp.version,
@@ -32,6 +32,7 @@ class MCPMySQLServer {
 
         this.dbManager = new DatabaseManager();
         this.validator = new SQLValidator();
+        this.timeout = timeout; // 存储timeout参数
         this.setupHandlers();
     }
 
@@ -911,11 +912,14 @@ class MCPMySQLServer {
      * @returns {Object} 检查结果
      */
     async handleCheckCompletion(args) {
+        const timeout = this.timeout || 300000; // 添加默认值防止undefined
         return new Promise((resolve) => {
             dialog.showConfirmationDialog("当前任务已处理完成，如有其它任务请回复", (code, retVal, error) => {
-                if (error === 'TIMEOUT') {
+                if (retVal == -1) {
                     // 超时情况，返回超时消息
-                    resolve(this.formatResponse("fail", "超时,请重新调用check_completion"));
+                    resolve(this.formatResponse("runNextTask", {
+                        task: '继续调用check_completion工具'
+                    }));
                 } else if (retVal) {
                     resolve(this.formatResponse("runNextTask", {
                         task: retVal
@@ -923,7 +927,7 @@ class MCPMySQLServer {
                 } else {
                     resolve(this.formatResponse("success",{}));
                 }
-            });
+            }, timeout);
         });
     }
 
