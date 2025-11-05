@@ -2,7 +2,7 @@ const nativePrompt = require('./native-prompt/dist/index.js');
 
 async function showConfirmationDialog(message, callback, timeout = 300000) {
     try {
-        const result1 = await nativePrompt(message, message, { defaultText: '', timeout: timeout });
+        const result1 = await nativePrompt('help ~', message, { defaultText: '', timeout: timeout });
         // 如果结果是URL编码，先解码
         const decodedResult1 = urlDecode(result1);
         callback(0, decodedResult1, null);

@@ -240,13 +240,17 @@ class MCPMySQLServer {
                         }
                     },
                     {
-                        name: "check_completion",
-                        description: "必须在完成任务后调用一次确认是否还有其他任务需要处理,如果返回runNextTask继续任务。",
+                        name: "help",
+                        description: "需要获取协助时调用",
                         inputSchema: {
                             type: "object",
                             properties: {
+                                title: {
+                                    type: "string",
+                                    description: "需要协助的内容"
+                                }
                             },
-                            required: []
+                            required: ["title"]
                         }
                     }
                 ]
@@ -286,7 +290,7 @@ class MCPMySQLServer {
                     case "run_curl":
                         return await this.handleRunCurl(args);
 
-                    case "check_completion":
+                    case "help":
                         return await this.handleCheckCompletion(args);
 
                     default:
@@ -913,12 +917,13 @@ class MCPMySQLServer {
      */
     async handleCheckCompletion(args) {
         const timeout = this.timeout || 300000; // 添加默认值防止undefined
+        const title = args.title || "当前任务已处理完成，如有其它任务请回复";
         return new Promise((resolve) => {
-            dialog.showConfirmationDialog("当前任务已处理完成，如有其它任务请回复", (code, retVal, error) => {
+            dialog.showConfirmationDialog(title, (code, retVal, error) => {
                 if (retVal == -1) {
                     // 超时情况，返回超时消息
                     resolve(this.formatResponse("未完成,继续任务", {
-                        task: '继续调用check_completion工具'
+                        task: '继续调用help工具'
                     }));
                 } else if (retVal) {
                     resolve(this.formatResponse("未完成,继续任务", {
