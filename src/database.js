@@ -104,8 +104,11 @@ class DatabaseManager {
                 };
             }
 
-            // 创建新的连接池
-            let db = mysql.createPool(dsn);
+            // 非只读工具允许一次执行多条 SQL 语句。
+            const db = mysql.createPool({
+                ...dsnInfo,
+                multipleStatements: true,
+            });
 
             return {
                 success: true,
@@ -126,20 +129,17 @@ class DatabaseManager {
      */
     parseDSN(dsn) {
         try {
-            // 匹配DSN格式：mysql://user:password@host:port/database
-            const regex = /mysql:\/\/([^:]+):([^@]+)@([^:]+)(?::(\d+))?\/([^?]+)(?:\?.*)?/;
-            const match = dsn.match(regex);
-
-            if (!match) {
+            const url = new URL(dsn);
+            if (url.protocol !== 'mysql:' || !url.hostname || !url.username || !url.pathname || url.pathname === '/') {
                 return null;
             }
 
             return {
-                user: match[1],
-                password: match[2],
-                host: match[3],
-                port: match[4] ? parseInt(match[4]) : 3306,
-                database: match[5]
+                user: decodeURIComponent(url.username),
+                password: decodeURIComponent(url.password),
+                host: url.hostname,
+                port: url.port ? parseInt(url.port) : 3306,
+                database: decodeURIComponent(url.pathname.slice(1))
             };
         } catch (error) {
 
@@ -261,6 +261,40 @@ class DatabaseManager {
             if (connection) {
                 connection.release();
             }
+        }
+    }
+
+    /**
+     * 执行不受 SQL 类型限制的语句，支持分号分隔的多条语句。
+     */
+    async executeUnrestrictedQuery(sql, params = [], DB) {
+        let connection;
+        try {
+            connection = await DB.getConnection();
+            const startTime = Date.now();
+            const [rows, fields] = await connection.query(sql, params);
+            const executionTime = Date.now() - startTime;
+            const rowCount = Array.isArray(rows)
+                ? rows.reduce((count, item) => count + (Array.isArray(item) ? item.length : item.affectedRows || 0), 0)
+                : rows.affectedRows || 0;
+
+            return {
+                success: true,
+                operation: 'UNRESTRICTED',
+                data: rows,
+                fields: fields || [],
+                rowCount,
+                executionTime,
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message,
+                sqlState: error.sqlState || null,
+                errno: error.errno || null,
+            };
+        } finally {
+            if (connection) connection.release();
         }
     }
 

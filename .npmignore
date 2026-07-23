@@ -1,0 +1,10 @@
+.idea/
+test/
+test_*.js
+test_*.bat
+.env
+.env.mma
+logs/
+coverage/
+.nyc_output/
+*.log

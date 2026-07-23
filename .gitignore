@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env.mma
 logs/*.log
 .DS_Store
 *.log

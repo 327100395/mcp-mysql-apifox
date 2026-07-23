@@ -18,6 +18,8 @@ const dialog = require('./dialog');
 const DatabaseManager = require('./database');
 const SQLValidator = require('./validators');
 const config = require('./config');
+const {getDatabaseConfig, getApifoxConfig, getFtpConfig} = require('./project-config');
+const {FtpManager} = require('./ftp');
 
 class MCPMySQLServer {
     constructor(timeout = 300000) {
@@ -31,6 +33,7 @@ class MCPMySQLServer {
         });
 
         this.dbManager = new DatabaseManager();
+        this.ftpManager = new FtpManager();
         this.validator = new SQLValidator();
         this.timeout = timeout; // 存储timeout参数
         this.setupHandlers();
@@ -42,7 +45,13 @@ class MCPMySQLServer {
      * @returns {Object} 查询结果
      */
     async handleExecuteMySQLReadonly(args) {
-        const {dsn, sql, params = []} = args;
+        const {sql, params = []} = args;
+        let dsn;
+        try {
+            ({dsn} = getDatabaseConfig(args.projectRoot));
+        } catch (error) {
+            return this.formatResponse('fail', error.message);
+        }
 
         // 验证DSN
         const dsnValidation = this.validator.validateDSN(dsn);
@@ -121,6 +130,31 @@ class MCPMySQLServer {
         };
     }
 
+    getFtpTools() {
+        const connection = {type: 'string', description: 'FTP 会话名（默认 default）'};
+        const remotePath = {type: 'string', description: '远程路径'};
+        return [
+            ['ftp_connect', '建立 FTP、FTPS 或 SFTP 连接', {projectRoot: {type: 'string', description: '项目根目录绝对路径'}, connection}, ['projectRoot']],
+            ['ftp_disconnect', '断开 FTP 连接', {connection}, []],
+            ['ftp_list_connections', '列出活动 FTP 连接', {}, []],
+            ['ftp_pwd', '显示当前远程目录', {connection}, []],
+            ['ftp_cd', '切换远程目录', {connection, path: remotePath}, ['path']],
+            ['ftp_list', '列出远程目录', {connection, path: remotePath}, []],
+            ['ftp_upload', '上传本地文件到远程路径', {connection, localPath: {type: 'string', description: '本地相对文件路径'}, remotePath, mode: {type: 'string', enum: ['auto', 'ascii', 'binary']}}, ['localPath', 'remotePath']],
+            ['ftp_download', '下载远程文件到本地路径', {connection, remotePath, localPath: {type: 'string', description: '本地相对目标路径'}}, ['remotePath', 'localPath']],
+            ['ftp_delete', '删除远程文件', {connection, path: remotePath}, ['path']],
+            ['ftp_rename', '重命名远程文件或目录', {connection, oldPath: remotePath, newPath: remotePath}, ['oldPath', 'newPath']],
+            ['ftp_read', '读取远程文本文件', {connection, path: remotePath}, ['path']],
+            ['ftp_write', '写入远程文本文件', {connection, path: remotePath, content: {type: 'string'}}, ['path', 'content']],
+            ['ftp_append', '追加远程文本文件', {connection, path: remotePath, content: {type: 'string'}}, ['path', 'content']],
+            ['ftp_stat', '查看远程文件信息', {connection, path: remotePath}, ['path']],
+            ['ftp_exists', '检查远程路径是否存在', {connection, path: remotePath}, ['path']],
+            ['ftp_mkdir', '创建远程目录', {connection, path: remotePath, recursive: {type: 'boolean'}}, ['path']],
+            ['ftp_rmdir', '删除远程目录', {connection, path: remotePath, recursive: {type: 'boolean'}}, ['path']],
+            ['ftp_chmod', '修改远程文件权限', {connection, path: remotePath, mode: {type: 'string', description: '八进制权限，例如 755'}}, ['path', 'mode']],
+        ].map(([name, description, properties, required]) => ({name, description, inputSchema: {type: 'object', properties, required}}));
+    }
+
     /**
      * 设置MCP服务器处理器
      */
@@ -131,38 +165,43 @@ class MCPMySQLServer {
                 tools: [
                     {
                         name: "execute_mysql_only",
-                        description: "仅执行execute_mysql_readonly不支持的mysql语句,使用前读取规则或用户指定的DSN链接",
+                        description: "执行任意 MySQL SQL，支持分号分隔的多条语句",
                         inputSchema: {
                             type: "object",
                             properties: {
-                                dsn: {
+                                projectRoot: {
                                     type: "string",
-                                    description: "MySQL数据库连接字符串，DSN格式：mysql://user:password@host:port/database"
+                                    description: "项目根目录绝对路径"
                                 },
                                 sql: {
                                     type: "string",
-                                    description: "要执行的SQL语句,执行失败重试2次"
+                                    description: "要执行的 SQL，可使用分号分隔多条语句"
+                                },
+                                params: {
+                                    type: "array",
+                                    description: "SQL 参数（可选）",
+                                    items: {}
                                 }
                             },
-                            required: ["dsn", "sql"]
+                            required: ["projectRoot", "sql"]
                         }
                     },
                     {
                         name: "execute_mysql_readonly",
-                        description: "执行只读mysql语句(仅支持SELECT、SHOW、DESCRIBE等查询操作),使用前读取规则或用户指定的DSN链接",
+                        description: "执行只读 MySQL 语句（SELECT、SHOW、DESCRIBE 等）",
                         inputSchema: {
                             type: "object",
                             properties: {
-                                dsn: {
+                                projectRoot: {
                                     type: "string",
-                                    description: "MySQL数据库连接字符串，DSN格式：mysql://user:password@host:port/database"
+                                    description: "项目根目录绝对路径"
                                 },
                                 sql: {
                                     type: "string",
                                     description: "要执行的只读SQL语句(SELECT、SHOW、DESCRIBE等),如果不是读操作将终止运行"
                                 }
                             },
-                            required: ["dsn", "sql"]
+                            required: ["projectRoot", "sql"]
                         }
                     },
                     // {
@@ -183,7 +222,7 @@ class MCPMySQLServer {
                     // },
                     {
                         name: "import_openapi",
-                        description: "导入OpenAPI数据到Apifox,在用户明确生成api文档时使用,使用前读取规则或用户指定的项目ID和API密钥,可导入json字符串/包含json文档的目录/json文件",
+                        description: "将 OpenAPI 数据导入 Apifox；仅在用户明确要求生成或更新 API 文档时使用",
                         inputSchema: {
                             type: "object",
                             properties: {
@@ -191,38 +230,26 @@ class MCPMySQLServer {
                                     type: "string",
                                     description: "JSON 格式 OpenAPI 数据字符串，或接口文档json文件绝对路径（示例\"file#[路径]\"），或包含json文件的目录绝对路径（示例\"dir#[路径]\"）。注意路径可能有盘符"
                                 },
-                                projectId: {
+                                projectRoot: {
                                     type: "string",
-                                    description: "Apifox项目ID"
-                                },
-                                apiKey: {
-                                    type: "string",
-                                    description: "Apifox API密钥"
+                                    description: "项目根目录绝对路径"
                                 }
                             },
-                            required: ["input", "projectId", "apiKey"]
+                            required: ["input", "projectRoot"]
                         }
                     },
                     {
                         name: "download_apis",
-                        description: "从Apifox下载所有API到指定目录,可传递目录绝对路径、Apifox项目ID和API密钥(读取规则或用户指定的)",
+                        description: "从 Apifox 下载所有 API 到项目根目录的 .apiDoc 目录",
                         inputSchema: {
                             type: "object",
                             properties: {
-                                rootDir: {
+                                projectRoot: {
                                     type: "string",
-                                    description: "下载文件的根目录路径"
-                                },
-                                projectId: {
-                                    type: "string",
-                                    description: "Apifox项目ID"
-                                },
-                                apiKey: {
-                                    type: "string",
-                                    description: "Apifox API密钥"
+                                    description: "项目根目录绝对路径"
                                 }
                             },
-                            required: ["rootDir", "projectId", "apiKey"]
+                            required: ["projectRoot"]
                         }
                     },
                     {
@@ -239,20 +266,7 @@ class MCPMySQLServer {
                             required: ["curl"]
                         }
                     },
-                    {
-                        name: "help",
-                        description: "需要获取协助时调用",
-                        inputSchema: {
-                            type: "object",
-                            properties: {
-                                title: {
-                                    type: "string",
-                                    description: "需要协助的内容"
-                                }
-                            },
-                            required: ["title"]
-                        }
-                    }
+                    ...this.getFtpTools()
                 ]
             };
         });
@@ -290,10 +304,8 @@ class MCPMySQLServer {
                     case "run_curl":
                         return await this.handleRunCurl(args);
 
-                    case "help":
-                        return await this.handleCheckCompletion(args);
-
                     default:
+                        if (name.startsWith('ftp_')) return await this.handleFtp(name, args || {});
                         throw new Error(`未知的工具: ${name}`);
                 }
             } catch (error) {
@@ -400,6 +412,58 @@ class MCPMySQLServer {
         }
     }
 
+    resolveFtpLocalPath(client, requestedPath) {
+        return path.resolve(client.config.projectRoot, requestedPath || '.');
+    }
+
+    async handleFtp(name, args) {
+        const connection = args.connection || 'default';
+        try {
+            if (name === 'ftp_connect') {
+                const {ftp: ftpConfig} = getFtpConfig(args.projectRoot);
+                const client = await this.ftpManager.connect(connection, ftpConfig);
+                return this.formatResponse('success', {
+                    connection,
+                    host: ftpConfig.host,
+                    protocol: ftpConfig.protocol,
+                    remoteDir: await client.pwd()
+                });
+            }
+            if (name === 'ftp_list_connections') return this.formatResponse('success', this.ftpManager.list());
+            if (name === 'ftp_disconnect') { await this.ftpManager.disconnect(connection); return this.formatResponse('success', `已断开 FTP 连接: ${connection}`); }
+
+            const client = this.ftpManager.get(connection);
+            switch (name) {
+                case 'ftp_pwd': return this.formatResponse('success', await client.pwd());
+                case 'ftp_cd': await client.cd(args.path); return this.formatResponse('success', await client.pwd());
+                case 'ftp_list': return this.formatResponse('success', await client.list(args.path));
+                case 'ftp_upload': {
+                    const localPath = this.resolveFtpLocalPath(client, args.localPath);
+                    await client.upload(localPath, args.remotePath, args.mode || 'auto');
+                    return this.formatResponse('success', `已上传 ${localPath} -> ${args.remotePath}`);
+                }
+                case 'ftp_download': {
+                    const localPath = this.resolveFtpLocalPath(client, args.localPath);
+                    await client.download(args.remotePath, localPath);
+                    return this.formatResponse('success', `已下载 ${args.remotePath} -> ${localPath}`);
+                }
+                case 'ftp_delete': await client.remove(args.path); return this.formatResponse('success', `已删除 ${args.path}`);
+                case 'ftp_rename': await client.rename(args.oldPath, args.newPath); return this.formatResponse('success', `已重命名 ${args.oldPath} -> ${args.newPath}`);
+                case 'ftp_read': return this.formatResponse('success', await client.read(args.path));
+                case 'ftp_write': await client.write(args.path, args.content); return this.formatResponse('success', `已写入 ${args.path}`);
+                case 'ftp_append': await client.write(args.path, args.content, true); return this.formatResponse('success', `已追加 ${args.path}`);
+                case 'ftp_stat': return this.formatResponse('success', await client.stat(args.path));
+                case 'ftp_exists': return this.formatResponse('success', await client.exists(args.path));
+                case 'ftp_mkdir': await client.mkdir(args.path, args.recursive === true); return this.formatResponse('success', `已创建目录 ${args.path}`);
+                case 'ftp_rmdir': await client.rmdir(args.path, args.recursive === true); return this.formatResponse('success', `已删除目录 ${args.path}`);
+                case 'ftp_chmod': await client.chmod(args.path, args.mode); return this.formatResponse('success', `已修改权限 ${args.path} -> ${args.mode}`);
+                default: throw new Error(`未知 FTP 工具: ${name}`);
+            }
+        } catch (error) {
+            return this.formatResponse('fail', error.message);
+        }
+    }
+
     /**
      * 启动MCP服务器
      */
@@ -420,19 +484,19 @@ class MCPMySQLServer {
      * @returns {Object} 执行结果
      */
     async handleExecuteMySQL(args) {
-        const {dsn, sql, params = []} = args;
+        const {sql, params = []} = args;
+        let dsn;
+        try {
+            ({dsn} = getDatabaseConfig(args.projectRoot));
+        } catch (error) {
+            return this.formatResponse('fail', error.message);
+        }
 
 
         // 验证DSN
         const dsnValidation = this.validator.validateDSN(dsn);
         if (!dsnValidation.isValid) {
             return this.formatResponse("fail", `${dsnValidation.error}`);
-        }
-
-        // 验证SQL语句
-        const sqlValidation = this.validator.validateSQL(sql);
-        if (!sqlValidation.isValid) {
-            return this.formatResponse("fail", `${sqlValidation.error}`);
         }
 
         // 验证参数
@@ -449,8 +513,8 @@ class MCPMySQLServer {
                 return this.formatResponse("fail", `${connectResult.error}`);
             }
 
-            // 执行SQL
-            const result = await this.dbManager.executeQuery(sql, params, connectResult.db);
+            // 不限制 SQL 类型，并允许分号分隔的多条 SQL 语句。
+            const result = await this.dbManager.executeUnrestrictedQuery(sql, params, connectResult.db);
 
             if (result.success) {
                 let executionTime = result.executionTime;
@@ -472,9 +536,12 @@ class MCPMySQLServer {
      * @returns {Object} 导入结果
      */
     async handleImportOpenAPIToApifox(args) {
-        let {input, projectId, apiKey} = args;
+        let {input} = args;
+        let projectId;
+        let apiKey;
 
         try {
+            ({projectId, apiKey} = getApifoxConfig(args.projectRoot));
             let inputData;
             let isDirectory = false;
             let isFile = false;
@@ -642,14 +709,16 @@ class MCPMySQLServer {
      * @param {string} args.apiKey - Apifox API密钥
      */
     async handleDownloadAPIs(args) {
-        const {rootDir, projectId, apiKey} = args;
+        let rootDir;
+        let projectId;
+        let apiKey;
 
         try {
+            const apifox = getApifoxConfig(args.projectRoot);
+            rootDir = path.join(apifox.root, '.apiDoc');
+            projectId = apifox.projectId;
+            apiKey = apifox.apiKey;
             // 验证参数
-            if (!rootDir || !projectId || !apiKey) {
-                throw new Error('缺少必要参数: rootDir, projectId, apiKey');
-            }
-
             // 确保根目录存在
             if (!fs.existsSync(rootDir)) {
                 fs.mkdirSync(rootDir, {recursive: true});
@@ -941,6 +1010,7 @@ class MCPMySQLServer {
      */
     async stop() {
         await this.dbManager.close();
+        await this.ftpManager.closeAll();
     }
 }
 
