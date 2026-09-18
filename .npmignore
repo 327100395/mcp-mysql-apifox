@@ -2,6 +2,7 @@
 test/
 test_*.js
 test_*.bat
+src/terminal-input.js
 .env
 .env.mma
 logs/

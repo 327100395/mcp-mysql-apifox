@@ -13,16 +13,15 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const parseCurl = require('parse-curl');
-const dialog = require('./dialog');
-
 const DatabaseManager = require('./database');
 const SQLValidator = require('./validators');
 const config = require('./config');
 const {getDatabaseConfig, getApifoxConfig, getFtpConfig} = require('./project-config');
 const {FtpManager} = require('./ftp');
+const {startConfig} = require('./init');
 
 class MCPMySQLServer {
-    constructor(timeout = 300000) {
+    constructor() {
         this.server = new Server({
             name: config.mcp.name,
             version: config.mcp.version,
@@ -34,8 +33,8 @@ class MCPMySQLServer {
 
         this.dbManager = new DatabaseManager();
         this.ftpManager = new FtpManager();
+        this.configServers = new Set();
         this.validator = new SQLValidator();
-        this.timeout = timeout; // 存储timeout参数
         this.setupHandlers();
     }
 
@@ -48,7 +47,7 @@ class MCPMySQLServer {
         const {sql, params = []} = args;
         let dsn;
         try {
-            ({dsn} = getDatabaseConfig(args.projectRoot));
+            ({dsn} = getDatabaseConfig(args.projectRoot, args.database || 'default'));
         } catch (error) {
             return this.formatResponse('fail', error.message);
         }
@@ -130,11 +129,26 @@ class MCPMySQLServer {
         };
     }
 
+    async handleConfig(args) {
+        try {
+            let configServer;
+            const result = await startConfig(args.projectRoot, {
+                onClose: () => this.configServers.delete(configServer),
+            });
+            configServer = result.server;
+            this.configServers.add(configServer);
+            return this.formatResponse('success', '已打开本地配置页面，请用户在浏览器完成配置后再继续操作。');
+        } catch (error) {
+            return this.formatResponse('fail', error.message);
+        }
+    }
+
     getFtpTools() {
         const connection = {type: 'string', description: 'FTP 会话名（默认 default）'};
+        const profile = {type: 'string', description: 'FTP 配置名称（默认 default）'};
         const remotePath = {type: 'string', description: '远程路径'};
         return [
-            ['ftp_connect', '建立 FTP、FTPS 或 SFTP 连接', {projectRoot: {type: 'string', description: '项目根目录绝对路径'}, connection}, ['projectRoot']],
+            ['ftp_connect', '建立 FTP、FTPS 或 SFTP 连接', {projectRoot: {type: 'string', description: '项目根目录绝对路径'}, connection, profile}, ['projectRoot']],
             ['ftp_disconnect', '断开 FTP 连接', {connection}, []],
             ['ftp_list_connections', '列出活动 FTP 连接', {}, []],
             ['ftp_pwd', '显示当前远程目录', {connection}, []],
@@ -164,6 +178,20 @@ class MCPMySQLServer {
             return {
                 tools: [
                     {
+                        name: "config",
+                        description: "打开指定项目的本地配置页面；仅在用户明确要求配置，或工具提示项目尚未配置时使用",
+                        inputSchema: {
+                            type: "object",
+                            properties: {
+                                projectRoot: {
+                                    type: "string",
+                                    description: "需要配置的项目根目录绝对路径"
+                                }
+                            },
+                            required: ["projectRoot"]
+                        }
+                    },
+                    {
                         name: "execute_mysql_only",
                         description: "执行任意 MySQL SQL，支持分号分隔的多条语句",
                         inputSchema: {
@@ -172,6 +200,10 @@ class MCPMySQLServer {
                                 projectRoot: {
                                     type: "string",
                                     description: "项目根目录绝对路径"
+                                },
+                                database: {
+                                    type: "string",
+                                    description: "数据库配置名称（默认 default）"
                                 },
                                 sql: {
                                     type: "string",
@@ -195,6 +227,10 @@ class MCPMySQLServer {
                                 projectRoot: {
                                     type: "string",
                                     description: "项目根目录绝对路径"
+                                },
+                                database: {
+                                    type: "string",
+                                    description: "数据库配置名称（默认 default）"
                                 },
                                 sql: {
                                     type: "string",
@@ -277,6 +313,9 @@ class MCPMySQLServer {
 
             try {
                 switch (name) {
+                    case "config":
+                        return await this.handleConfig(args || {});
+
                     case "connect_mysql":
                         return await this.handleConnectMySQL(args);
 
@@ -420,10 +459,12 @@ class MCPMySQLServer {
         const connection = args.connection || 'default';
         try {
             if (name === 'ftp_connect') {
-                const {ftp: ftpConfig} = getFtpConfig(args.projectRoot);
+                const profile = args.profile || 'default';
+                const {ftp: ftpConfig} = getFtpConfig(args.projectRoot, profile);
                 const client = await this.ftpManager.connect(connection, ftpConfig);
                 return this.formatResponse('success', {
                     connection,
+                    profile,
                     host: ftpConfig.host,
                     protocol: ftpConfig.protocol,
                     remoteDir: await client.pwd()
@@ -487,7 +528,7 @@ class MCPMySQLServer {
         const {sql, params = []} = args;
         let dsn;
         try {
-            ({dsn} = getDatabaseConfig(args.projectRoot));
+            ({dsn} = getDatabaseConfig(args.projectRoot, args.database || 'default'));
         } catch (error) {
             return this.formatResponse('fail', error.message);
         }
@@ -981,36 +1022,13 @@ class MCPMySQLServer {
     }
 
     /**
-     * 检查任务是否完成
-     * @returns {Object} 检查结果
-     */
-    async handleCheckCompletion(args) {
-        const timeout = this.timeout || 300000; // 添加默认值防止undefined
-        const title = args.title || "当前任务已处理完成，如有其它任务请回复";
-        return new Promise((resolve) => {
-            dialog.showConfirmationDialog(title, (code, retVal, error) => {
-                if (retVal == -1) {
-                    // 超时情况，返回超时消息
-                    resolve(this.formatResponse("未完成,继续任务", {
-                        task: '继续调用help工具'
-                    }));
-                } else if (retVal) {
-                    resolve(this.formatResponse("未完成,继续任务", {
-                        task: retVal
-                    }));
-                } else {
-                    resolve(this.formatResponse("已完成",{}));
-                }
-            }, timeout);
-        });
-    }
-
-    /**
      * 停止服务器
      */
     async stop() {
         await this.dbManager.close();
         await this.ftpManager.closeAll();
+        await Promise.all([...this.configServers].map((server) => new Promise((resolve) => server.close(resolve))));
+        this.configServers.clear();
     }
 }
 

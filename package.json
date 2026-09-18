@@ -1,12 +1,15 @@
 {
   "name": "mcp-mysql-apifox",
-  "version": "1.3.4",
+  "version": "1.4.0",
   "main": "src/index.js",
   "bin": {
     "mcp-mysql-apifox": "src/index.js"
   },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "config": "node src/index.js config",
+    "init": "node src/index.js config",
+    "test": "node --test test/project-config.test.js"
   },
   "keywords": [],
   "author": "",
