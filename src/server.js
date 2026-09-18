@@ -132,12 +132,14 @@ class MCPMySQLServer {
     async handleConfig(args) {
         try {
             let configServer;
-            const result = await startConfig(args.projectRoot, {
+            await startConfig(args.projectRoot, {
+                onReady: ({server}) => {
+                    configServer = server;
+                    this.configServers.add(server);
+                },
                 onClose: () => this.configServers.delete(configServer),
             });
-            configServer = result.server;
-            this.configServers.add(configServer);
-            return this.formatResponse('success', '已打开本地配置页面，请用户在浏览器完成配置后再继续操作。');
+            return this.formatResponse('success', '项目配置已保存。');
         } catch (error) {
             return this.formatResponse('fail', error.message);
         }
@@ -179,7 +181,7 @@ class MCPMySQLServer {
                 tools: [
                     {
                         name: "config",
-                        description: "打开指定项目的本地配置页面；仅在用户明确要求配置，或工具提示项目尚未配置时使用",
+                        description: "打开指定项目的本地配置页面，并等待用户保存成功后才返回；仅在用户明确要求配置，或工具提示项目尚未配置时使用",
                         inputSchema: {
                             type: "object",
                             properties: {
