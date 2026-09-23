@@ -139,7 +139,7 @@ class MCPMySQLServer {
                 },
                 onClose: () => this.configServers.delete(configServer),
             });
-            return this.formatResponse('success', '项目配置已保存。');
+            return this.formatResponse('success', '已打开本地配置页面，页面将在 1 小时后自动关闭。');
         } catch (error) {
             return this.formatResponse('fail', error.message);
         }
@@ -181,7 +181,7 @@ class MCPMySQLServer {
                 tools: [
                     {
                         name: "config",
-                        description: "打开指定项目的本地配置页面，并等待用户保存成功后才返回；仅在用户明确要求配置，或工具提示项目尚未配置时使用",
+                        description: "打开指定项目的本地配置页面；页面会保留 1 小时，保存成功后自动关闭。仅在用户明确要求配置，或工具提示项目尚未配置时使用",
                         inputSchema: {
                             type: "object",
                             properties: {

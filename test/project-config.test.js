@@ -75,7 +75,7 @@ test('缺少配置时读取不会创建文件', () => {
     }
 });
 
-test('配置页面支持新增、测试连接且保存后才完成', async () => {
+test('配置页面支持新增、测试连接且保存后自动关闭', async () => {
     const childProcess = require('node:child_process');
     const originalSpawn = childProcess.spawn;
     const originalLog = console.log;
@@ -84,11 +84,7 @@ test('配置页面支持新增、测试连接且保存后才完成', async () =>
     try {
         childProcess.spawn = () => ({unref() {}});
         console.log = () => {};
-        let ready;
-        const readyPromise = new Promise((resolve) => { ready = resolve; });
-        let resolved = false;
-        const completion = startConfig(root, {onReady: ready}).then((value) => { resolved = true; return value; });
-        const session = await readyPromise;
+        const session = await startConfig(root);
         server = session.server;
         const htmlResponse = await request(session.url);
         assert.equal(htmlResponse.status, 200);
@@ -98,15 +94,13 @@ test('配置页面支持新增、测试连接且保存后才完成', async () =>
         assert.match(htmlResponse.text, /测试连接/);
         const script = htmlResponse.text.match(/<script>([\s\S]*)<\/script>/)[1];
         assert.doesNotThrow(() => new Function(script));
-        assert.equal(resolved, false);
+        assert.match(htmlResponse.text, /页面会在 1 小时后自动关闭/);
         const token = htmlResponse.text.match(/const token="([a-f0-9]+)"/)[1];
         const invalidTest = await request(`${session.url}api/test/database?token=${token}`, 'POST', {});
         assert.equal(invalidTest.status, 400);
         assert.match(invalidTest.text, /连接失败/);
         const save = await request(`${session.url}api/save?token=${token}`, 'POST', {databases: [], ftps: [], apifox: {}});
         assert.equal(save.status, 200);
-        await completion;
-        assert.equal(resolved, true);
         assert.equal(loadProjectConfig(root).created, false);
         await new Promise((resolve) => server.once('close', resolve));
     } finally {
@@ -117,7 +111,7 @@ test('配置页面支持新增、测试连接且保存后才完成', async () =>
     }
 });
 
-test('MCP config 工具会等待配置保存后再返回', async () => {
+test('MCP config 工具会立即返回并保留配置页 1 小时', async () => {
     const childProcess = require('node:child_process');
     const originalSpawn = childProcess.spawn;
     const originalLog = console.log;
@@ -127,23 +121,37 @@ test('MCP config 工具会等待配置保存后再返回', async () => {
         childProcess.spawn = () => ({unref() {}});
         console.log = () => {};
         mcp = new MCPMySQLServer();
-        let settled = false;
-        const call = mcp.handleConfig({projectRoot: root}).then((value) => { settled = true; return value; });
-        for (let index = 0; index < 20 && !mcp.configServers.size; index += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+        const response = await mcp.handleConfig({projectRoot: root});
+        assert.match(response.content[0].text, /1 小时后自动关闭/);
         assert.equal(mcp.configServers.size, 1);
-        assert.equal(settled, false);
         const server = [...mcp.configServers][0];
         const url = `http://127.0.0.1:${server.address().port}/`;
         const html = await request(url);
         const token = html.text.match(/const token="([a-f0-9]+)"/)[1];
         const save = await request(`${url}api/save?token=${token}`, 'POST', {databases: [], ftps: [], apifox: {}});
         assert.equal(save.status, 200);
-        const response = await call;
-        assert.match(response.content[0].text, /项目配置已保存/);
     } finally {
         childProcess.spawn = originalSpawn;
         console.log = originalLog;
         if (mcp) await mcp.stop();
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
+test('配置页超时后自动关闭', async () => {
+    const childProcess = require('node:child_process');
+    const originalSpawn = childProcess.spawn;
+    const originalLog = console.log;
+    const root = tempProject();
+    try {
+        childProcess.spawn = () => ({unref() {}});
+        console.log = () => {};
+        const {server} = await startConfig(root, {timeoutMs: 20});
+        await new Promise((resolve) => server.once('close', resolve));
+        assert.equal(server.listening, false);
+    } finally {
+        childProcess.spawn = originalSpawn;
+        console.log = originalLog;
         fs.rmSync(root, {recursive: true, force: true});
     }
 });
