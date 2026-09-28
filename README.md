@@ -14,7 +14,7 @@
      "mcpServers": {
        "mysql-apifox": {
          "command": "npx",
-         "args": ["-y", "mcp-mysql-apifox"]
+         "args": ["-y", "mcp-mysql-apifox", "-pwd", "<your-encryption-password>"]
        }
      }
    }
@@ -25,13 +25,13 @@
    也可在终端执行：
 
    ```bash
-   npx -y mcp-mysql-apifox config /absolute/path/to/project
-   # 或安装到本地后：npm run config -- /absolute/path/to/project
+   npx -y mcp-mysql-apifox config /absolute/path/to/project -pwd "your-encryption-password"
+   # 或安装到本地后：npm run config -- /absolute/path/to/project -pwd "your-encryption-password"
    ```
 
    已有配置需要在页面确认覆盖，也可用 `--force` 跳过确认。
 
-   配置文件采用 AES-256-GCM 加密：每次保存会生成新的随机数据密钥，随机密钥会再由工具内置密钥加密封装，文件中不会保存其明文。该方式用于避免凭据以明文落盘，不应替代操作系统账户权限、磁盘加密或密钥管理服务。
+   配置必须先通过程序启动参数 `-pwd <密码>` 设置全局 ENV 加密密码；密码仅在当前进程内存中使用，不保存到用户目录。新版使用 PBKDF2-SHA256 派生 AES-256-GCM 密钥。历史加密格式仍可读取；通过配置页重新保存后将迁移为当前密码加密格式。密码需在后续每次启动时提供才能解密新版配置。注意：命令行参数可能被本机进程查看，请在可信环境中使用。
 
 3. `.env.mma` 已加入 `.gitignore`，不要提交它。旧版单套 dotenv 配置仍可读取；重新通过初始化页面保存即可升级为加密格式。
 

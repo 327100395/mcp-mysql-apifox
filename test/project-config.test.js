@@ -1,15 +1,36 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const {ENV_FILE, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getFtpConfig} = require('../src/project-config');
+const {ENV_FILE, setEncryptionPassword, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getFtpConfig} = require('../src/project-config');
 const {startConfig, testDatabase, testFtp} = require('../src/init');
 const MCPMySQLServer = require('../src/server');
 
+setEncryptionPassword('test-global-env-password');
+
 function tempProject() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'mysql-mcp-'));
+}
+
+function encryptLegacyValue(value, key) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    cipher.setAAD(Buffer.from('mcp-mysql-apifox-encrypted-config:v1'));
+    const data = Buffer.concat([cipher.update(value), cipher.final()]);
+    return {iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64')};
+}
+
+function legacyEncryptedConfig(data) {
+    const masterKey = crypto.createHash('sha256').update('mcp-mysql-apifox/config-envelope/v1/5c4e0cf4').digest();
+    const dataKey = crypto.randomBytes(32);
+    return JSON.stringify({
+        format: 'mcp-mysql-apifox-encrypted-config', version: 1, algorithm: 'aes-256-gcm',
+        wrappedKey: encryptLegacyValue(dataKey, masterKey),
+        payload: encryptLegacyValue(Buffer.from(JSON.stringify(data)), dataKey),
+    });
 }
 
 function request(url, method = 'GET', body) {
@@ -41,11 +62,28 @@ test('加密配置支持多个数据库和 FTP 配置', () => {
         });
         const raw = fs.readFileSync(path.join(root, ENV_FILE), 'utf8');
         assert.match(raw, /mcp-mysql-apifox-encrypted-config/);
+        assert.match(raw, /"version": 2/);
+        assert.match(raw, /pbkdf2-sha256/);
         assert.doesNotMatch(raw, /db-secret|report-secret|ftp-secret|api-secret/);
         assert.equal(getDatabaseConfig(root, 'reporting').database.host, 'db.example.com');
         assert.equal(getDatabaseConfig(root).database.name, 'default');
         assert.equal(getFtpConfig(root, 'backup').ftp.protocol, 'sftp');
         assert.equal(getFtpConfig(root, 'backup').ftp.port, 2222);
+    } finally {
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
+test('旧版加密配置仍可读取，重新保存后迁移到密码加密格式', () => {
+    const root = tempProject();
+    try {
+        const original = {databases: [{name: 'default', host: 'legacy-host', user: 'root', password: 'legacy-secret', database: 'old'}], ftps: [], apifox: {}};
+        fs.writeFileSync(path.join(root, ENV_FILE), legacyEncryptedConfig(original));
+        assert.equal(getDatabaseConfig(root).database.host, 'legacy-host');
+        saveProjectConfig(root, loadProjectConfig(root).data);
+        const rewritten = fs.readFileSync(path.join(root, ENV_FILE), 'utf8');
+        assert.match(rewritten, /"version": 2/);
+        assert.equal(getDatabaseConfig(root).database.password, 'legacy-secret');
     } finally {
         fs.rmSync(root, {recursive: true, force: true});
     }
