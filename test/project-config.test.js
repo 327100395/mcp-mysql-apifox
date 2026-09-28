@@ -146,6 +146,87 @@ test('缺少配置时读取不会创建文件', () => {
     }
 });
 
+test('无 ENV_PWD 时旧版 dotenv 仍能打开配置页并回显', async () => {
+    const childProcess = require('node:child_process');
+    const originalSpawn = childProcess.spawn;
+    const originalLog = console.log;
+    const root = tempProject();
+    let server;
+    try {
+        delete process.env.ENV_PWD;
+        fs.writeFileSync(path.join(root, ENV_FILE), 'DB_HOST=legacy-host\nDB_USER=legacy-user\nDB_PASSWORD=legacy-secret\nDB_NAME=legacy-db\n');
+        childProcess.spawn = () => ({unref() {}});
+        console.log = () => {};
+        const session = await startConfig(root);
+        server = session.server;
+        const html = (await request(session.url)).text;
+        assert.match(html, /"host":"legacy-host"/);
+        assert.match(html, /"password":"legacy-secret"/);
+    } finally {
+        childProcess.spawn = originalSpawn;
+        console.log = originalLog;
+        if (server && server.listening) await new Promise((resolve) => server.close(resolve));
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
+test('ENV_PWD 存在时仍可解密旧加密文件并在配置页回显', async () => {
+    const childProcess = require('node:child_process');
+    const originalSpawn = childProcess.spawn;
+    const originalLog = console.log;
+    const previousPassword = process.env.ENV_PWD;
+    const root = tempProject();
+    let server;
+    try {
+        process.env.ENV_PWD = 'any-current-password';
+        fs.writeFileSync(path.join(root, ENV_FILE), legacyEncryptedConfig({
+            databases: [{name: 'default', host: 'legacy-encrypted-host', user: 'root', password: 'legacy-encrypted-secret', database: 'legacy'}],
+            ftps: [], apifox: {},
+        }));
+        childProcess.spawn = () => ({unref() {}});
+        console.log = () => {};
+        const session = await startConfig(root);
+        server = session.server;
+        const html = (await request(session.url)).text;
+        assert.match(html, /"host":"legacy-encrypted-host"/);
+        assert.match(html, /"password":"legacy-encrypted-secret"/);
+    } finally {
+        if (previousPassword === undefined) delete process.env.ENV_PWD;
+        else process.env.ENV_PWD = previousPassword;
+        childProcess.spawn = originalSpawn;
+        console.log = originalLog;
+        if (server && server.listening) await new Promise((resolve) => server.close(resolve));
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
+test('密码加密文件缺少密码时配置页可打开但禁止覆盖', async () => {
+    const childProcess = require('node:child_process');
+    const originalSpawn = childProcess.spawn;
+    const originalLog = console.log;
+    const root = tempProject();
+    let server;
+    try {
+        withEnvPassword('config-lock-password', () => saveProjectConfig(root, {databases: [], ftps: [], apifox: {}}));
+        delete process.env.ENV_PWD;
+        childProcess.spawn = () => ({unref() {}});
+        console.log = () => {};
+        const session = await startConfig(root);
+        server = session.server;
+        const html = (await request(session.url)).text;
+        assert.match(html, /设置环境变量 ENV_PWD/);
+        assert.match(html, /<form id="form" hidden>/);
+        const token = html.match(/const token="([a-f0-9]+)"/)[1];
+        const save = await request(`${session.url}api/save?token=${token}`, 'POST', {databases: [], ftps: [], apifox: {}});
+        assert.equal(save.status, 409);
+    } finally {
+        childProcess.spawn = originalSpawn;
+        console.log = originalLog;
+        if (server && server.listening) await new Promise((resolve) => server.close(resolve));
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
 test('配置页面支持新增、测试连接且保存后自动关闭', async () => {
     const childProcess = require('node:child_process');
     const originalSpawn = childProcess.spawn;

@@ -3,7 +3,7 @@ const http = require('http');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const crypto = require('crypto');
-const {loadProjectConfig, saveProjectConfig} = require('./project-config');
+const {ENV_FILE, loadProjectConfig, saveProjectConfig} = require('./project-config');
 const {FtpManager} = require('./ftp');
 
 const CONFIG_TIMEOUT_MS = 60 * 60 * 1000;
@@ -92,14 +92,16 @@ async function testFtp(profile, projectRoot) {
     }
 }
 
-function page(initialData, exists, force, token) {
+function page(initialData, exists, force, token, lockedMessage = '') {
     const data = JSON.stringify(initialData).replace(/</g, '\\u003c');
     const needsOverwrite = exists && !force;
+    const configLocked = Boolean(lockedMessage);
+    const lockedNotice = configLocked ? `<p class="notice">${lockedMessage}配置页面已打开，但不会显示空白配置或允许覆盖原文件。设置正确密码后重新打开页面即可读取并回显。</p>` : '';
     return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MCP 本地配置</title><style>
 *{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#1e293b;font:14px system-ui,-apple-system,"Microsoft YaHei",sans-serif}.wrap{max-width:960px;margin:32px auto;padding:0 20px}h1{margin:0 0 8px}.hint{color:#64748b;line-height:1.7}.card{background:#fff;border:1px solid #dbe3ee;border-radius:12px;padding:20px;margin:18px 0;box-shadow:0 2px 10px #0f172a08}h2{font-size:18px;margin:0 0 14px}.profile{border:1px solid #e2e8f0;border-radius:9px;padding:14px;margin:12px 0;background:#fbfdff}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.wide{grid-column:span 3}label{display:block;font-size:12px;color:#475569}input,select{display:block;width:100%;margin-top:5px;border:1px solid #cbd5e1;border-radius:6px;padding:9px;background:#fff;color:#0f172a}button{border:0;border-radius:7px;padding:9px 13px;background:#2563eb;color:#fff;cursor:pointer}button.remove{background:#e2e8f0;color:#334155}button.test{background:#0f766e}button.save{font-size:16px;padding:12px 20px;margin-top:16px}.row{display:flex;gap:9px;align-items:center;margin-top:12px}.row input[type="checkbox"]{display:inline-block;width:auto;margin:0;flex:none}.notice,.success,.test-result{padding:11px;border-radius:7px;margin-top:12px}.notice{background:#fff7ed;color:#9a3412}.success{background:#ecfdf5;color:#047857}.test-result{background:#f1f5f9;color:#334155}.hidden{display:none}@media(max-width:680px){.grid{grid-template-columns:1fr}.wide{grid-column:span 1}}</style></head>
-<body><main class="wrap"><h1>MCP 本地配置</h1><p class="hint">配置仅通过本机回环地址提交。可新增多个数据库和 FTP 配置；每项可在保存前测试连接。页面会在 1 小时后自动关闭。</p>${needsOverwrite ? '<p class="notice">已检测到现有配置。保存前需确认覆盖。</p>' : ''}
-<form id="form"><section class="card"><h2>数据库</h2><div id="databases"></div><button id="add-database" type="button">新增数据库</button></section><section class="card"><h2>FTP / FTPS / SFTP</h2><div id="ftps"></div><button id="add-ftp" type="button">新增 FTP</button></section><section class="card"><h2>Apifox（可选）</h2><div class="grid"><label class="wide">API Key<input id="apiKey" type="password" autocomplete="off"></label><label class="wide">项目 ID<input id="projectId"></label></div></section>${needsOverwrite ? '<label class="row"><input id="overwrite" type="checkbox">我确认覆盖现有配置</label>' : ''}<p id="result" class="hidden"></p><button id="save" class="save" type="submit">加密保存配置</button></form></main>
+<body><main class="wrap"><h1>MCP 本地配置</h1><p class="hint">配置仅通过本机回环地址提交。可新增多个数据库和 FTP 配置；每项可在保存前测试连接。页面会在 1 小时后自动关闭。</p>${lockedNotice}${needsOverwrite ? '<p class="notice">已检测到现有配置。保存前需确认覆盖。</p>' : ''}
+<form id="form" ${configLocked ? 'hidden' : ''}><section class="card"><h2>数据库</h2><div id="databases"></div><button id="add-database" type="button">新增数据库</button></section><section class="card"><h2>FTP / FTPS / SFTP</h2><div id="ftps"></div><button id="add-ftp" type="button">新增 FTP</button></section><section class="card"><h2>Apifox（可选）</h2><div class="grid"><label class="wide">API Key<input id="apiKey" type="password" autocomplete="off"></label><label class="wide">项目 ID<input id="projectId"></label></div></section>${needsOverwrite ? '<label class="row"><input id="overwrite" type="checkbox">我确认覆盖现有配置</label>' : ''}<p id="result" class="hidden"></p><button id="save" class="save" type="submit">加密保存配置</button></form></main>
 <script>
 const initial=${data}; const token=${JSON.stringify(token)}; const needsOverwrite=${needsOverwrite};
 const databases=document.querySelector('#databases'),ftps=document.querySelector('#ftps'),result=document.querySelector('#result');
@@ -121,7 +123,16 @@ document.querySelector('#form').addEventListener('submit',async event=>{event.pr
 }
 
 function startConfig(projectRoot, {force = false, onClose, onReady, timeoutMs = CONFIG_TIMEOUT_MS} = {}) {
-    const current = loadProjectConfig(projectRoot);
+    let current;
+    let lockedMessage = '';
+    try {
+        current = loadProjectConfig(projectRoot);
+    } catch (error) {
+        if (!['ENV_PASSWORD_REQUIRED', 'ENV_PASSWORD_INVALID'].includes(error.code)) throw error;
+        const root = path.resolve(projectRoot);
+        current = {root, envPath: path.join(root, ENV_FILE), created: false, data: {databases: [], ftps: [], apifox: {apiKey: '', projectId: ''}}};
+        lockedMessage = error.message;
+    }
     const exists = !current.created;
     const initialData = current.data;
     const token = crypto.randomBytes(24).toString('hex');
@@ -137,10 +148,15 @@ function startConfig(projectRoot, {force = false, onClose, onReady, timeoutMs = 
             const url = new URL(request.url, 'http://127.0.0.1');
             if (request.method === 'GET' && url.pathname === '/') {
                 response.writeHead(200, {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'});
-                response.end(page(initialData, exists, force, token));
+                response.end(page(initialData, exists, force, token, lockedMessage));
                 return;
             }
             if (request.method === 'POST' && url.searchParams.get('token') === token && url.pathname === '/api/save') {
+                if (lockedMessage) {
+                    response.writeHead(409, {'content-type': 'application/json; charset=utf-8'});
+                    response.end(JSON.stringify({message: lockedMessage}));
+                    return;
+                }
                 try {
                     const data = JSON.parse(await readBody(request));
                     saveProjectConfig(projectRoot, data);

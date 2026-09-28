@@ -91,14 +91,23 @@ function decryptConfig(raw) {
         }
         if (envelope.version === CURRENT_ENCRYPTED_VERSION && envelope.kdf === 'pbkdf2-sha256' && envelope.salt) {
             const password = getEncryptionPassword();
-            if (!password) throw new Error(`请设置环境变量 ${PASSWORD_ENV_VAR} 以读取此 ENV 配置。`);
+            if (!password) {
+                const error = new Error(`请设置环境变量 ${PASSWORD_ENV_VAR} 才能读取此密码加密配置。`);
+                error.code = 'ENV_PASSWORD_REQUIRED';
+                throw error;
+            }
             const key = deriveKey(password, Buffer.from(envelope.salt, 'base64'));
             return JSON.parse(decrypt(envelope.payload, key, CURRENT_AAD).toString('utf8'));
         }
         throw new Error('项目配置格式或版本不受支持，请重新执行初始化命令。');
     } catch (error) {
-        if (error.message.includes(`环境变量 ${PASSWORD_ENV_VAR}`)) throw error;
-        throw new Error(`项目配置无法解密或已损坏；请确认环境变量 ${PASSWORD_ENV_VAR} 设置了正确密码。`);
+        if (error.code === 'ENV_PASSWORD_REQUIRED') throw error;
+        if (envelope.version === CURRENT_ENCRYPTED_VERSION) {
+            const passwordError = new Error(`无法读取密码加密配置；请确认环境变量 ${PASSWORD_ENV_VAR} 设置了正确密码。`);
+            passwordError.code = 'ENV_PASSWORD_INVALID';
+            throw passwordError;
+        }
+        throw new Error('项目配置无法解密或已损坏，请重新执行初始化命令。');
     }
 }
 
