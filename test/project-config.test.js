@@ -5,11 +5,27 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const {ENV_FILE, setEncryptionPassword, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getFtpConfig} = require('../src/project-config');
+const {ENV_FILE, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getFtpConfig} = require('../src/project-config');
 const {startConfig, testDatabase, testFtp} = require('../src/init');
 const MCPMySQLServer = require('../src/server');
 
-setEncryptionPassword('test-global-env-password');
+const originalEnvPwd = process.env.ENV_PWD;
+delete process.env.ENV_PWD;
+test.after(() => {
+    if (originalEnvPwd === undefined) delete process.env.ENV_PWD;
+    else process.env.ENV_PWD = originalEnvPwd;
+});
+
+function withEnvPassword(password, callback) {
+    const previous = process.env.ENV_PWD;
+    if (password === undefined) delete process.env.ENV_PWD;
+    else process.env.ENV_PWD = password;
+    try { return callback(); }
+    finally {
+        if (previous === undefined) delete process.env.ENV_PWD;
+        else process.env.ENV_PWD = previous;
+    }
+}
 
 function tempProject() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'mysql-mcp-'));
@@ -46,9 +62,10 @@ function request(url, method = 'GET', body) {
     });
 }
 
-test('加密配置支持多个数据库和 FTP 配置', () => {
+test('设置 ENV_PWD 后使用密码加密多个配置', () => {
     const root = tempProject();
     try {
+        withEnvPassword('test-global-env-password', () => {
         saveProjectConfig(root, {
             databases: [
                 {name: 'default', host: '127.0.0.1', port: '3306', user: 'root', password: 'db-secret', database: 'app'},
@@ -69,14 +86,29 @@ test('加密配置支持多个数据库和 FTP 配置', () => {
         assert.equal(getDatabaseConfig(root).database.name, 'default');
         assert.equal(getFtpConfig(root, 'backup').ftp.protocol, 'sftp');
         assert.equal(getFtpConfig(root, 'backup').ftp.port, 2222);
+        });
     } finally {
         fs.rmSync(root, {recursive: true, force: true});
     }
 });
 
-test('旧版加密配置仍可读取，重新保存后迁移到密码加密格式', () => {
+test('未设置 ENV_PWD 时保存为原有加密格式', () => {
     const root = tempProject();
     try {
+        saveProjectConfig(root, {databases: [], ftps: [], apifox: {apiKey: 'old-style-secret'}});
+        const raw = fs.readFileSync(path.join(root, ENV_FILE), 'utf8');
+        assert.match(raw, /"version": 1/);
+        assert.match(raw, /"wrappedKey"/);
+        assert.equal(loadProjectConfig(root).data.apifox.apiKey, 'old-style-secret');
+    } finally {
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
+test('旧版加密配置仍可读取，重新保存后按 ENV_PWD 迁移', () => {
+    const root = tempProject();
+    try {
+        withEnvPassword('test-global-env-password', () => {
         const original = {databases: [{name: 'default', host: 'legacy-host', user: 'root', password: 'legacy-secret', database: 'old'}], ftps: [], apifox: {}};
         fs.writeFileSync(path.join(root, ENV_FILE), legacyEncryptedConfig(original));
         assert.equal(getDatabaseConfig(root).database.host, 'legacy-host');
@@ -84,6 +116,7 @@ test('旧版加密配置仍可读取，重新保存后迁移到密码加密格�
         const rewritten = fs.readFileSync(path.join(root, ENV_FILE), 'utf8');
         assert.match(rewritten, /"version": 2/);
         assert.equal(getDatabaseConfig(root).database.password, 'legacy-secret');
+        });
     } finally {
         fs.rmSync(root, {recursive: true, force: true});
     }

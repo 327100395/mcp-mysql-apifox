@@ -1,16 +1,6 @@
 #!/usr/bin/env node
 
 const args = process.argv.slice(2);
-const passwordIndex = args.indexOf('-pwd');
-if (passwordIndex !== -1) {
-    const password = args[passwordIndex + 1];
-    if (!password || password.startsWith('-')) {
-        console.error('启动参数 -pwd 后必须提供非空密码。');
-        process.exit(1);
-    }
-    require('./project-config').setEncryptionPassword(password);
-    args.splice(passwordIndex, 2);
-}
 
 if (args[0] === 'config' || args[0] === 'init') {
     require('./init').startInit(args.slice(1)).catch((error) => {

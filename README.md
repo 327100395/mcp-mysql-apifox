@@ -14,7 +14,8 @@
      "mcpServers": {
        "mysql-apifox": {
          "command": "npx",
-         "args": ["-y", "mcp-mysql-apifox", "-pwd", "<your-encryption-password>"]
+         "args": ["-y", "mcp-mysql-apifox"],
+         "env": {"ENV_PWD": "<your-encryption-password>"}
        }
      }
    }
@@ -25,13 +26,16 @@
    也可在终端执行：
 
    ```bash
-   npx -y mcp-mysql-apifox config /absolute/path/to/project -pwd "your-encryption-password"
-   # 或安装到本地后：npm run config -- /absolute/path/to/project -pwd "your-encryption-password"
+   # macOS / Linux
+   ENV_PWD="your-encryption-password" npx -y mcp-mysql-apifox config /absolute/path/to/project
+   # PowerShell
+   $env:ENV_PWD="your-encryption-password"; npx -y mcp-mysql-apifox config /absolute/path/to/project
+   # 或安装到本地后：npm run config -- /absolute/path/to/project
    ```
 
    已有配置需要在页面确认覆盖，也可用 `--force` 跳过确认。
 
-   配置必须先通过程序启动参数 `-pwd <密码>` 设置全局 ENV 加密密码；密码仅在当前进程内存中使用，不保存到用户目录。新版使用 PBKDF2-SHA256 派生 AES-256-GCM 密钥。历史加密格式仍可读取；通过配置页重新保存后将迁移为当前密码加密格式。密码需在后续每次启动时提供才能解密新版配置。注意：命令行参数可能被本机进程查看，请在可信环境中使用。
+   可通过环境变量 `ENV_PWD` 设置全局加密密码，密码仅由当前进程读取，不写入用户目录。设置后，保存的配置使用 PBKDF2-SHA256 派生的 AES-256-GCM 密钥；之后启动时也需设置相同变量才能解密。未设置 `ENV_PWD` 时，沿用原有内置密钥加密方式，配置流程与旧版一致。旧加密配置始终可读取；重新保存时按当前环境变量选择加密方式。
 
 3. `.env.mma` 已加入 `.gitignore`，不要提交它。旧版单套 dotenv 配置仍可读取；重新通过初始化页面保存即可升级为加密格式。
 

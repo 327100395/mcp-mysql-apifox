@@ -9,11 +9,11 @@ const ENCRYPTED_VERSION = 1;
 const CURRENT_ENCRYPTED_VERSION = 2;
 const AAD = `${ENCRYPTED_FORMAT}:v${ENCRYPTED_VERSION}`;
 const CURRENT_AAD = `${ENCRYPTED_FORMAT}:v${CURRENT_ENCRYPTED_VERSION}`;
-// 仅用于读取历史版本配置；新配置由启动参数 -pwd 提供的密码加密。
+// 未设置环境变量时使用原有内置密钥格式；设置环境变量后使用密码加密。
 const CONFIG_MASTER_SECRET = 'mcp-mysql-apifox/config-envelope/v1/5c4e0cf4';
 const MASTER_KEY = crypto.createHash('sha256').update(CONFIG_MASTER_SECRET).digest();
 const KDF_ITERATIONS = 310000;
-let encryptionPassword = '';
+const PASSWORD_ENV_VAR = 'ENV_PWD';
 
 function assertProjectRoot(projectRoot) {
     if (typeof projectRoot !== 'string' || !projectRoot.trim()) {
@@ -41,13 +41,8 @@ function decrypt(value, key, aad = AAD) {
     return Buffer.concat([decipher.update(Buffer.from(value.data, 'base64')), decipher.final()]);
 }
 
-function setEncryptionPassword(password) {
-    if (typeof password !== 'string' || !password.trim()) throw new Error('必须通过启动参数 -pwd 提供全局 ENV 加密密码。');
-    encryptionPassword = password;
-}
-
-function hasEncryptionPassword() {
-    return Boolean(encryptionPassword);
+function getEncryptionPassword() {
+    return process.env[PASSWORD_ENV_VAR] || '';
 }
 
 function deriveKey(password, salt) {
@@ -55,9 +50,19 @@ function deriveKey(password, salt) {
 }
 
 function encryptConfig(data) {
-    if (!encryptionPassword) throw new Error('未设置全局 ENV 加密密码。请在启动命令中添加 -pwd <密码> 后再配置。');
+    const password = getEncryptionPassword();
+    if (!password) {
+        const dataKey = crypto.randomBytes(32);
+        return JSON.stringify({
+            format: ENCRYPTED_FORMAT,
+            version: ENCRYPTED_VERSION,
+            algorithm: 'aes-256-gcm',
+            wrappedKey: encrypt(dataKey, MASTER_KEY),
+            payload: encrypt(Buffer.from(JSON.stringify(data), 'utf8'), dataKey),
+        }, null, 2) + '\n';
+    }
     const salt = crypto.randomBytes(16);
-    const key = deriveKey(encryptionPassword, salt);
+    const key = deriveKey(password, salt);
     return JSON.stringify({
         format: ENCRYPTED_FORMAT,
         version: CURRENT_ENCRYPTED_VERSION,
@@ -85,14 +90,15 @@ function decryptConfig(raw) {
             return JSON.parse(decrypt(envelope.payload, dataKey).toString('utf8'));
         }
         if (envelope.version === CURRENT_ENCRYPTED_VERSION && envelope.kdf === 'pbkdf2-sha256' && envelope.salt) {
-            if (!encryptionPassword) throw new Error('请使用启动参数 -pwd <密码> 提供此 ENV 的加密密码。');
-            const key = deriveKey(encryptionPassword, Buffer.from(envelope.salt, 'base64'));
+            const password = getEncryptionPassword();
+            if (!password) throw new Error(`请设置环境变量 ${PASSWORD_ENV_VAR} 以读取此 ENV 配置。`);
+            const key = deriveKey(password, Buffer.from(envelope.salt, 'base64'));
             return JSON.parse(decrypt(envelope.payload, key, CURRENT_AAD).toString('utf8'));
         }
         throw new Error('项目配置格式或版本不受支持，请重新执行初始化命令。');
     } catch (error) {
-        if (error.message.includes('启动参数 -pwd')) throw error;
-        throw new Error('项目配置无法解密或已损坏；请确认启动参数 -pwd 提供了正确的密码。');
+        if (error.message.includes(`环境变量 ${PASSWORD_ENV_VAR}`)) throw error;
+        throw new Error(`项目配置无法解密或已损坏；请确认环境变量 ${PASSWORD_ENV_VAR} 设置了正确密码。`);
     }
 }
 
@@ -218,4 +224,4 @@ function getFtpConfig(projectRoot, profileName = 'default') {
     return {...config, ftp: {...ftp, port, protocol, projectRoot: config.root}};
 }
 
-module.exports = {ENV_FILE, ENCRYPTED_FORMAT, setEncryptionPassword, hasEncryptionPassword, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getApifoxConfig, getFtpConfig};
+module.exports = {ENV_FILE, ENCRYPTED_FORMAT, PASSWORD_ENV_VAR, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getApifoxConfig, getFtpConfig};

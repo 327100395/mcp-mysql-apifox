@@ -3,7 +3,7 @@ const http = require('http');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const crypto = require('crypto');
-const {loadProjectConfig, saveProjectConfig, hasEncryptionPassword} = require('./project-config');
+const {loadProjectConfig, saveProjectConfig} = require('./project-config');
 const {FtpManager} = require('./ftp');
 
 const CONFIG_TIMEOUT_MS = 60 * 60 * 1000;
@@ -121,7 +121,6 @@ document.querySelector('#form').addEventListener('submit',async event=>{event.pr
 }
 
 function startConfig(projectRoot, {force = false, onClose, onReady, timeoutMs = CONFIG_TIMEOUT_MS} = {}) {
-    if (!hasEncryptionPassword()) throw new Error('配置前必须设置全局 ENV 加密密码。请在启动命令中添加 -pwd <密码> 后重试。');
     const current = loadProjectConfig(projectRoot);
     const exists = !current.created;
     const initialData = current.data;
