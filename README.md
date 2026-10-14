@@ -1,7 +1,6 @@
 ## 主要功能
 
 - 在多个命名 MySQL 配置中执行 SQL
-- 管理 Apifox 接口文档
 - 解析并执行 curl 命令
 - 通过多个命名 FTP、FTPS 或 SFTP 配置操作远程目录
 
@@ -12,7 +11,7 @@
    ```json
    {
      "mcpServers": {
-       "mysql-apifox": {
+       "mysql-mcp": {
          "command": "npx",
          "args": ["-y", "mcp-mysql-apifox"],
          "env": {"ENV_PWD": "<your-encryption-password>"}
@@ -41,12 +40,22 @@
 
 ## 多配置使用
 
+- 配置名称支持中文、英文字母、数字、下划线和连字符，例如 `生产库`、`备份服务器-1`。
+- 调用 `list_configs(projectRoot)` 可查看已保存的数据库和 FTP 配置名称。
 - MySQL 工具的可选 `database` 参数指定数据库配置名；不传时使用 `default`。
 - `ftp_connect` 的可选 `profile` 参数指定 FTP 配置名；`connection` 仍是本次运行的 FTP 会话名，两者可不同。
 
 例如，先用 `database: "reporting"` 访问报表库；再以 `profile: "backup"`、`connection: "backup-session"` 建立备份服务器会话。工具错误只会提示缺失或不可用的配置名称，不会返回凭据或配置文件内容。
 
 ## 可用工具
+
+### `list_configs`
+
+列出项目已保存的配置，不建立网络连接，不返回密码、私钥口令等凭据。
+
+- `projectRoot`: 项目根目录绝对路径（必填）
+- 返回示例：`{"status":"success","res":{"databases":["default","生产库"],"ftps":["备份服务器"]}}`
+- 项目尚未配置时返回提示，要求先调用 `config` 工具。
 
 ### `execute_mysql_only`
 
@@ -64,10 +73,6 @@
 - `projectRoot`: 项目根目录绝对路径
 - `database`: 数据库配置名称（可选，默认 `default`）
 - `sql`: SQL 语句
-
-### `import_openapi` / `download_apis`
-
-导入 OpenAPI 数据到 Apifox，或下载 Apifox API 到项目 `.apiDoc` 目录。二者均需传入 `projectRoot`。
 
 ### `run_curl`
 

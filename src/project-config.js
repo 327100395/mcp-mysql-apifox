@@ -4,6 +4,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 
 const ENV_FILE = '.env.mma';
+// 保留旧格式标识和内置密钥，以兼容已保存的加密配置。
 const ENCRYPTED_FORMAT = 'mcp-mysql-apifox-encrypted-config';
 const ENCRYPTED_VERSION = 1;
 const CURRENT_ENCRYPTED_VERSION = 2;
@@ -113,8 +114,8 @@ function decryptConfig(raw) {
 
 function normalizeName(name, type) {
     const value = String(name || '').trim();
-    if (!/^[A-Za-z0-9_-]+$/.test(value)) {
-        throw new Error(`${type}配置名称只能包含字母、数字、下划线或连字符。`);
+    if (!/^[\p{Script=Han}A-Za-z0-9_-]+$/u.test(value)) {
+        throw new Error(`${type}配置名称只能包含中文、英文字母、数字、下划线或连字符。`);
     }
     return value;
 }
@@ -137,10 +138,6 @@ function normalizeConfig(data) {
     return {
         databases: normalizeProfiles(input.databases, '数据库', ['host', 'port', 'user', 'password', 'database']),
         ftps: normalizeProfiles(input.ftps, 'FTP', ['host', 'port', 'protocol', 'username', 'password', 'privateKeyPath', 'passphrase']),
-        apifox: {
-            apiKey: input.apifox && input.apifox.apiKey !== undefined ? String(input.apifox.apiKey) : '',
-            projectId: input.apifox && input.apifox.projectId !== undefined ? String(input.apifox.projectId) : '',
-        },
     };
 }
 
@@ -156,7 +153,6 @@ function legacyConfig(raw) {
             username: values.FTP_USERNAME, password: values.FTP_PASSWORD,
             privateKeyPath: values.FTP_PRIVATE_KEY_PATH, passphrase: values.FTP_PASSPHRASE,
         }] : [],
-        apifox: {apiKey: values.APIFOX_API_KEY, projectId: values.APIFOX_PROJECT_ID},
     });
 }
 
@@ -214,13 +210,6 @@ function getDatabaseConfig(projectRoot, profileName = 'default') {
     return {...config, database, dsn: databaseUrl.toString()};
 }
 
-function getApifoxConfig(projectRoot) {
-    const config = loadProjectConfig(projectRoot);
-    if (config.created) throw new Error(config.message);
-    requireValues(config.data.apifox, ['apiKey', 'projectId'], 'Apifox');
-    return {...config, apiKey: config.data.apifox.apiKey, projectId: config.data.apifox.projectId};
-}
-
 function getFtpConfig(projectRoot, profileName = 'default') {
     const config = loadProjectConfig(projectRoot);
     const ftp = findProfile(config, 'FTP', profileName);
@@ -233,4 +222,4 @@ function getFtpConfig(projectRoot, profileName = 'default') {
     return {...config, ftp: {...ftp, port, protocol, projectRoot: config.root}};
 }
 
-module.exports = {ENV_FILE, ENCRYPTED_FORMAT, PASSWORD_ENV_VAR, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getApifoxConfig, getFtpConfig};
+module.exports = {ENV_FILE, ENCRYPTED_FORMAT, PASSWORD_ENV_VAR, loadProjectConfig, saveProjectConfig, getDatabaseConfig, getFtpConfig};

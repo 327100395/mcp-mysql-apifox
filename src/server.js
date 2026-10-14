@@ -10,13 +10,12 @@ const {
     CallToolRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
 const axios = require('axios');
-const fs = require('fs');
 const path = require('path');
 const parseCurl = require('parse-curl');
 const DatabaseManager = require('./database');
 const SQLValidator = require('./validators');
 const config = require('./config');
-const {getDatabaseConfig, getApifoxConfig, getFtpConfig} = require('./project-config');
+const {loadProjectConfig, getDatabaseConfig, getFtpConfig} = require('./project-config');
 const {FtpManager} = require('./ftp');
 const {startConfig} = require('./init');
 
@@ -145,6 +144,15 @@ class MCPMySQLServer {
         }
     }
 
+    handleListConfigs(args) {
+        const config = loadProjectConfig(args.projectRoot);
+        if (config.created) throw new Error(config.message);
+        return this.formatResponse('success', {
+            databases: config.data.databases.map((profile) => profile.name),
+            ftps: config.data.ftps.map((profile) => profile.name),
+        });
+    }
+
     getFtpTools() {
         const connection = {type: 'string', description: 'FTP 会话名（默认 default）'};
         const profile = {type: 'string', description: 'FTP 配置名称（默认 default）'};
@@ -189,6 +197,17 @@ class MCPMySQLServer {
                                     type: "string",
                                     description: "需要配置的项目根目录绝对路径"
                                 }
+                            },
+                            required: ["projectRoot"]
+                        }
+                    },
+                    {
+                        name: "list_configs",
+                        description: "列出指定项目已保存的数据库和 FTP 配置名称；不返回凭据，不建立连接",
+                        inputSchema: {
+                            type: "object",
+                            properties: {
+                                projectRoot: {type: "string", description: "项目根目录绝对路径"}
                             },
                             required: ["projectRoot"]
                         }
@@ -259,38 +278,6 @@ class MCPMySQLServer {
                     //   }
                     // },
                     {
-                        name: "import_openapi",
-                        description: "将 OpenAPI 数据导入 Apifox；仅在用户明确要求生成或更新 API 文档时使用",
-                        inputSchema: {
-                            type: "object",
-                            properties: {
-                                input: {
-                                    type: "string",
-                                    description: "JSON 格式 OpenAPI 数据字符串，或接口文档json文件绝对路径（示例\"file#[路径]\"），或包含json文件的目录绝对路径（示例\"dir#[路径]\"）。注意路径可能有盘符"
-                                },
-                                projectRoot: {
-                                    type: "string",
-                                    description: "项目根目录绝对路径"
-                                }
-                            },
-                            required: ["input", "projectRoot"]
-                        }
-                    },
-                    {
-                        name: "download_apis",
-                        description: "从 Apifox 下载所有 API 到项目根目录的 .apiDoc 目录",
-                        inputSchema: {
-                            type: "object",
-                            properties: {
-                                projectRoot: {
-                                    type: "string",
-                                    description: "项目根目录绝对路径"
-                                }
-                            },
-                            required: ["projectRoot"]
-                        }
-                    },
-                    {
                         name: "run_curl",
                         description: "解析并执行curl命令，返回HTTP请求结果",
                         inputSchema: {
@@ -318,6 +305,9 @@ class MCPMySQLServer {
                     case "config":
                         return await this.handleConfig(args || {});
 
+                    case "list_configs":
+                        return this.handleListConfigs(args || {});
+
                     case "connect_mysql":
                         return await this.handleConnectMySQL(args);
 
@@ -335,12 +325,6 @@ class MCPMySQLServer {
 
                     case "get_connection_status":
                         return await this.handleGetConnectionStatus();
-
-                    case "import_openapi":
-                        return await this.handleImportOpenAPIToApifox(args);
-
-                    case "download_apis":
-                        return await this.handleDownloadAPIs(args);
 
                     case "run_curl":
                         return await this.handleRunCurl(args);
@@ -570,398 +554,6 @@ class MCPMySQLServer {
             }
         } catch (error) {
             return this.formatResponse("fail", `${error.message}`);
-        }
-    }
-
-    /**
-     * 处理导入OpenAPI数据到Apifox的请求
-     * @param {Object} args - 请求参数
-     * @returns {Object} 导入结果
-     */
-    async handleImportOpenAPIToApifox(args) {
-        let {input} = args;
-        let projectId;
-        let apiKey;
-
-        try {
-            ({projectId, apiKey} = getApifoxConfig(args.projectRoot));
-            let inputData;
-            let isDirectory = false;
-            let isFile = false;
-
-            // 标准化路径分隔符，统一使用系统默认分隔符
-            if (input.startsWith('file#') || input.startsWith('dir#')) {
-                const prefix = input.startsWith('file#') ? 'file#' : 'dir#';
-                const pathPart = input.substring(prefix.length);
-                // 将路径中的正斜杠和反斜杠统一为系统默认分隔符
-                input = prefix + pathPart.replace(/\\/g, path.sep).replace(/\//g, path.sep);
-            } else {
-                // 将路径中的正斜杠和反斜杠统一为系统默认分隔符
-                input = input.replace(/\\/g, path.sep).replace(/\//g, path.sep);
-            }
-
-            // 检查是否需要处理前缀
-            if (input.startsWith('file#')) {
-                // 处理文件前缀
-                input = input.substring(5); // 移除 'file#' 前缀
-                isFile = true;
-            } else if (input.startsWith('dir#')) {
-                // 处理目录前缀
-                input = input.substring(4); // 移除 'dir#' 前缀
-                isDirectory = true;
-            } else {
-                // 检查input是否为文件路径或目录路径
-                try {
-                    const stats = fs.statSync(input);
-                    if (stats.isFile()) {
-                        isFile = true;
-                    } else if (stats.isDirectory()) {
-                        isDirectory = true;
-                    }
-                } catch (e) {
-                    // 不是有效路径，当作字符串处理
-                }
-            }
-
-            if (isFile) {
-                // 处理单个文件
-                try {
-                    const fileContent = fs.readFileSync(input, 'utf8');
-                    inputData = fileContent;
-
-                    const result = await this.importSingleOpenAPI(inputData, projectId, apiKey);
-                    return this.formatResponse("success", `✓ 文件 ${input} 导入成功`);
-                } catch (error) {
-                    return this.formatResponse("fail", `✗ 读取文件 ${input} 失败: ${error.message}`);
-                }
-            } else if (isDirectory) {
-                // 处理目录中的所有json文件（包括子目录）
-                try {
-                    const jsonFiles = this.getAllJsonFiles(input);
-
-                    if (jsonFiles.length === 0) {
-                        return this.formatResponse("fail", `✗ 目录 ${input} 及其子目录中没有找到json文件`);
-                    }
-
-                    const results = [];
-                    const failedFiles = [];
-
-                    for (const filePath of jsonFiles) {
-                        try {
-                            const fileContent = fs.readFileSync(filePath, 'utf8');
-                            const result = await this.importSingleOpenAPI(fileContent, projectId, apiKey);
-                            const relativePath = path.relative(input, filePath);
-                            results.push({
-                                file: relativePath,
-                                success: true,
-                                result: result
-                            });
-                        } catch (error) {
-                            const relativePath = path.relative(input, filePath);
-                            failedFiles.push({
-                                file: relativePath,
-                                path: filePath,
-                                error: error.message
-                            });
-                        }
-                    }
-
-                    let responseText = `批量导入完成:\n`;
-
-                    if (results.length > 0) {
-                        responseText += `成功导入的文件:\n`;
-                        results.forEach(r => {
-                            responseText += `✓ ${r.file}\n`;
-                        });
-                        responseText += `\n`;
-                    }
-
-                    if (failedFiles.length > 0) {
-                        responseText += `导入失败的文件:\n`;
-                        failedFiles.forEach(f => {
-                            responseText += `✗ ${f.file} (${f.path}): ${f.error}\n`;
-                        });
-                    }
-
-                    return this.formatResponse(failedFiles.length > 0 ? "fail" : "success", responseText);
-                } catch (error) {
-                    return this.formatResponse("fail", `✗ 读取目录 ${input} 失败: ${error.message}`);
-                }
-            } else {
-                // 当作字符串处理
-                inputData = input;
-                const result = await this.importSingleOpenAPI(inputData, projectId, apiKey);
-                return this.formatResponse("success", `✓ 导入成功`);
-            }
-        } catch (error) {
-            let errorMessage = error.message;
-            let errorData = {};
-
-            // 尝试提取API错误信息
-            if (error.response && error.response.data) {
-                errorData = error.response.data;
-                if (error.response.data.message) {
-                    errorMessage = error.response.data.message;
-                } else if (typeof error.response.data === 'string') {
-                    errorMessage = error.response.data;
-                }
-            }
-
-            return this.formatResponse("fail", `✗ OpenAPI数据导入失败: ${errorMessage}\n错误详情:\n${JSON.stringify(errorData, null, 2)}`);
-        }
-    }
-
-    /**
-     * 递归获取目录及其子目录中的所有JSON文件
-     * @param {string} dirPath - 目录路径
-     * @returns {Array} JSON文件路径数组
-     */
-    getAllJsonFiles(dirPath) {
-        const jsonFiles = [];
-
-        const scanDirectory = (currentPath) => {
-            try {
-                const items = fs.readdirSync(currentPath);
-
-                for (const item of items) {
-                    const fullPath = path.join(currentPath, item);
-                    const stats = fs.statSync(fullPath);
-
-                    if (stats.isDirectory()) {
-                        // 递归扫描子目录
-                        scanDirectory(fullPath);
-                    } else if (stats.isFile() && path.extname(item).toLowerCase() === '.json') {
-                        // 添加JSON文件
-                        jsonFiles.push(fullPath);
-                    }
-                }
-            } catch (error) {
-                // 忽略无法访问的目录
-            }
-        };
-
-        scanDirectory(dirPath);
-        return jsonFiles;
-    }
-
-    /**
-     * 处理下载APIs命令
-     * @param {Object} args - 参数对象
-     * @param {string} args.rootDir - 下载文件的根目录路径
-     * @param {string} args.projectId - Apifox项目ID
-     * @param {string} args.apiKey - Apifox API密钥
-     */
-    async handleDownloadAPIs(args) {
-        let rootDir;
-        let projectId;
-        let apiKey;
-
-        try {
-            const apifox = getApifoxConfig(args.projectRoot);
-            rootDir = path.join(apifox.root, '.apiDoc');
-            projectId = apifox.projectId;
-            apiKey = apifox.apiKey;
-            // 验证参数
-            // 确保根目录存在
-            if (!fs.existsSync(rootDir)) {
-                fs.mkdirSync(rootDir, {recursive: true});
-            }
-
-            // 调用Apifox API获取OpenAPI 3.1 JSON数据
-            const openApiData = await this.downloadOpenAPIFromApifox(projectId, apiKey);
-
-            // 解析并创建对应文件
-            await this.createFilesFromOpenAPI(openApiData, rootDir);
-
-            return {
-                content: [
-                    {
-                        type: "text",
-                        text: `✓ 成功从Apifox项目 ${projectId} 下载: ${rootDir}`
-                    }
-                ]
-            };
-
-        } catch (error) {
-            throw new Error(`下载APIs失败: ${error.message}`);
-        }
-    }
-
-    /**
-     * 从Apifox下载OpenAPI数据
-     * @param {string} projectId - 项目ID
-     * @param {string} apiKey - API密钥
-     */
-    async downloadOpenAPIFromApifox(projectId, apiKey) {
-        const requestData = {
-            "scope": {
-                "type": "ALL",
-                "excludedByTags": ["pet"]
-            },
-            "options": {
-                "includeApifoxExtensionProperties": false,
-                "addFoldersToTags": false
-            },
-            "oasVersion": "3.1",
-            "exportFormat": "JSON"
-        };
-
-        let lastError;
-        // 重试3次
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            try {
-                const response = await axios.post(
-                    `https://api.apifox.com/v1/projects/${projectId}/export-openapi?locale=zh-CN`,
-                    requestData,
-                    {
-                        headers: {
-                            'X-Apifox-Api-Version': '2024-03-28',
-                            'Authorization': 'Bearer ' + apiKey,
-                            'Content-Type': 'application/json'
-                        }
-                    }
-                );
-
-                if (response.status !== 200) {
-                    throw new Error(`API请求失败: ${response.statusText}`);
-                }
-
-                return response.data;
-
-            } catch (error) {
-                lastError = error;
-
-                if (attempt < 3) {
-                    // 等待1秒后重试
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            }
-        }
-
-        throw new Error(`下载API数据失败，已重试3次: ${lastError.message}`);
-    }
-
-    /**
-     * 安全处理文件名，转码特殊字符
-     * @param {string} filename - 原始文件名
-     * @returns {string} - 安全的文件名
-     */
-    sanitizeFileName(filename) {
-        // 定义需要转码的特殊字符映射
-        const charMap = {
-            '/': '／',        // 全角斜杠
-            '\\': '＼',      // 全角反斜杠
-            ':': '：',        // 全角冒号
-            '*': '＊',        // 全角星号
-            '?': '？',        // 全角问号
-            '"': '＂',        // 全角双引号
-            '<': '＜',        // 全角小于号
-            '>': '＞',        // 全角大于号
-            '|': '｜'         // 全角竖线
-        };
-
-        let safeName = filename;
-        for (const [char, replacement] of Object.entries(charMap)) {
-            safeName = safeName.replace(new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement);
-        }
-
-        return safeName;
-    }
-
-    /**
-     * 根据OpenAPI数据创建文件
-     * @param {Object} openApiData - OpenAPI数据
-     * @param {string} rootDir - 根目录
-     */
-    async createFilesFromOpenAPI(openApiData, rootDir) {
-        // 如果有paths，为每个API端点创建单独的文件
-        if (openApiData.paths) {
-            for (const [pathKey, pathValue] of Object.entries(openApiData.paths)) {
-                for (const [method, methodData] of Object.entries(pathValue)) {
-                    // 获取summary作为文件名，并进行安全处理
-                    const summary = methodData.summary || `${method}_${pathKey.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                    const safeFileName = this.sanitizeFileName(summary);
-                    const fileName = `${safeFileName}.json`;
-
-                    // 获取tags作为目录结构
-                    let targetDir = rootDir;
-                    if (methodData.tags && methodData.tags.length > 0) {
-                        // 为每个tag创建目录层级
-                        for (const tag of methodData.tags) {
-                            targetDir = path.join(targetDir, tag);
-                        }
-                    }
-
-                    // 确保目录存在
-                    if (!fs.existsSync(targetDir)) {
-                        fs.mkdirSync(targetDir, {recursive: true});
-                    }
-
-                    const filePath = path.join(targetDir, fileName);
-
-                    // 构建完整的OpenAPI结构，但paths中只包含当前API
-                    const apiData = {
-                        openapi: openApiData.openapi,
-                        info: openApiData.info,
-                        servers: openApiData.servers,
-                        paths: {
-                            [pathKey]: {
-                                [method]: methodData
-                            }
-                        },
-                        components: openApiData.components,
-                        security: openApiData.security,
-                        // tags: openApiData.tags,
-                        externalDocs: openApiData.externalDocs
-                    };
-
-                    // 移除undefined的字段
-                    Object.keys(apiData).forEach(key => {
-                        if (apiData[key] === undefined) {
-                            delete apiData[key];
-                        }
-                    });
-
-                    fs.writeFileSync(filePath, JSON.stringify(apiData, null, 2), 'utf8');
-                }
-            }
-        }
-    }
-
-    /**
-     * 导入单个OpenAPI数据到Apifox
-     * @param {string} inputData - OpenAPI数据字符串
-     * @param {string} projectId - Apifox项目ID
-     * @param {string} apiKey - Apifox API密钥
-     * @returns {Object} 导入结果
-     */
-    async importSingleOpenAPI(inputData, projectId, apiKey) {
-        // 准备请求数据
-        const requestData = {
-            input: inputData
-        };
-
-        // 发送请求到Apifox API
-        const response = await axios.post(
-            `https://api.apifox.com/v1/projects/${projectId}/import-openapi?locale=zh-CN`,
-            requestData,
-            {
-                headers: {
-                    'X-Apifox-Api-Version': '2024-03-28',
-                    'Authorization': 'Bearer ' + apiKey,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-
-        if (response?.data?.data?.errors?.length) {
-            throw new Error(response?.data?.data?.errors[0].message);
-        } else if (response?.data?.errors?.length) {
-            throw new Error(response?.data?.errors[0].message);
-        } else if (response.status === 200) {
-            return response.data;
-        } else {
-            throw new Error(`导入失败: ${response.statusText}`);
         }
     }
 

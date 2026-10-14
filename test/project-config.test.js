@@ -62,6 +62,86 @@ function request(url, method = 'GET', body) {
     });
 }
 
+test('中文配置名称可保存并用于读取，仍拒绝重复名称和非法字符', () => {
+    const root = tempProject();
+    try {
+        const data = {
+            databases: [{name: '生产库-1', host: 'localhost', user: 'root', password: 'secret', database: 'app'}],
+            ftps: [{name: '备份服务器_2', host: 'localhost', username: 'backup', protocol: 'sftp'}],
+        };
+        saveProjectConfig(root, data);
+        assert.equal(getDatabaseConfig(root, '生产库-1').database.name, '生产库-1');
+        assert.equal(getFtpConfig(root, '备份服务器_2').ftp.name, '备份服务器_2');
+        for (const type of ['databases', 'ftps']) {
+            assert.throws(() => saveProjectConfig(root, {[type]: [{name: '重复'}, {name: '重复'}]}), /配置名称不能重复/);
+            for (const name of ['', '中文 名称', '../生产库', '配置<script>']) {
+                assert.throws(() => saveProjectConfig(root, {[type]: [{name}]}), /配置名称只能包含中文/);
+            }
+        }
+    } finally {
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
+test('MCP list_configs 可发现并调用，只返回数据库和 FTP 配置名称', async () => {
+    const {Client} = require('@modelcontextprotocol/sdk/client/index.js');
+    const {InMemoryTransport} = require('@modelcontextprotocol/sdk/inMemory.js');
+    const root = tempProject();
+    const mcp = new MCPMySQLServer();
+    const client = new Client({name: 'config-test', version: '1.0.0'});
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+        await mcp.server.connect(serverTransport);
+        await client.connect(clientTransport);
+        const {tools} = await client.listTools();
+        const tool = tools.find((item) => item.name === 'list_configs');
+        assert.ok(tool);
+        assert.deepEqual(tool.inputSchema.required, ['projectRoot']);
+        for (const name of ['import_openapi', 'download_apis']) {
+            assert.equal(tools.some((item) => item.name === name), false);
+            const response = await client.callTool({name, arguments: {projectRoot: root}});
+            assert.equal(JSON.parse(response.content[0].text).status, 'fail');
+        }
+        const call = async (args = {projectRoot: root}) => {
+            const response = await client.callTool({name: 'list_configs', arguments: args});
+            return JSON.parse(response.content[0].text);
+        };
+        assert.match((await call()).res, /项目尚未配置/);
+        assert.equal(fs.existsSync(path.join(root, ENV_FILE)), false);
+        assert.equal((await call({})).status, 'fail');
+        assert.equal((await call({projectRoot: path.join(root, 'missing')})).status, 'fail');
+        withEnvPassword('list-config-password', () => saveProjectConfig(root, {
+            databases: [{name: '生产库', host: 'private-db-host', user: 'private-user', password: 'db-secret', database: 'app'}],
+            ftps: [{name: '备份服务器', password: 'ftp-secret', passphrase: 'key-secret', privateKeyPath: 'private-key'}],
+            apifox: {apiKey: 'api-secret', projectId: 'private-project-id'},
+        }));
+        assert.equal((await call()).status, 'fail');
+        process.env.ENV_PWD = 'list-config-password';
+        try {
+            assert.deepEqual(await call(), {
+                status: 'success',
+                res: {databases: ['生产库'], ftps: ['备份服务器']},
+            });
+            process.env.ENV_PWD = 'wrong-password';
+            assert.equal((await call()).status, 'fail');
+        } finally {
+            delete process.env.ENV_PWD;
+        }
+        saveProjectConfig(root, {databases: [], ftps: []});
+        assert.deepEqual(await call(), {
+            status: 'success', res: {databases: [], ftps: []},
+        });
+        fs.writeFileSync(path.join(root, ENV_FILE), 'DB_HOST=legacy-host\nFTP_HOST=legacy-ftp\n');
+        assert.deepEqual((await call()).res, {
+            databases: ['default'], ftps: ['default'],
+        });
+    } finally {
+        await client.close();
+        await mcp.stop();
+        fs.rmSync(root, {recursive: true, force: true});
+    }
+});
+
 test('设置 ENV_PWD 后使用密码加密多个配置', () => {
     const root = tempProject();
     try {
@@ -75,7 +155,6 @@ test('设置 ENV_PWD 后使用密码加密多个配置', () => {
                 {name: 'default', host: 'files.example.com', protocol: 'ftp', username: 'writer', password: 'ftp-secret'},
                 {name: 'backup', host: 'backup.example.com', protocol: 'sftp', port: '2222', username: 'backup', password: 'backup-secret'},
             ],
-            apifox: {apiKey: 'api-secret', projectId: '42'},
         });
         const raw = fs.readFileSync(path.join(root, ENV_FILE), 'utf8');
         assert.match(raw, /mcp-mysql-apifox-encrypted-config/);
@@ -95,11 +174,11 @@ test('设置 ENV_PWD 后使用密码加密多个配置', () => {
 test('未设置 ENV_PWD 时保存为原有加密格式', () => {
     const root = tempProject();
     try {
-        saveProjectConfig(root, {databases: [], ftps: [], apifox: {apiKey: 'old-style-secret'}});
+        saveProjectConfig(root, {databases: [{name: 'default', password: 'old-style-secret'}], ftps: []});
         const raw = fs.readFileSync(path.join(root, ENV_FILE), 'utf8');
         assert.match(raw, /"version": 1/);
         assert.match(raw, /"wrappedKey"/);
-        assert.equal(loadProjectConfig(root).data.apifox.apiKey, 'old-style-secret');
+        assert.equal(loadProjectConfig(root).data.databases[0].password, 'old-style-secret');
     } finally {
         fs.rmSync(root, {recursive: true, force: true});
     }
@@ -109,9 +188,10 @@ test('旧版加密配置仍可读取，重新保存后按 ENV_PWD 迁移', () =>
     const root = tempProject();
     try {
         withEnvPassword('test-global-env-password', () => {
-        const original = {databases: [{name: 'default', host: 'legacy-host', user: 'root', password: 'legacy-secret', database: 'old'}], ftps: [], apifox: {}};
+        const original = {databases: [{name: 'default', host: 'legacy-host', user: 'root', password: 'legacy-secret', database: 'old'}], ftps: [], apifox: {apiKey: 'removed-secret', projectId: '42'}};
         fs.writeFileSync(path.join(root, ENV_FILE), legacyEncryptedConfig(original));
         assert.equal(getDatabaseConfig(root).database.host, 'legacy-host');
+        assert.equal(Object.hasOwn(loadProjectConfig(root).data, 'apifox'), false);
         saveProjectConfig(root, loadProjectConfig(root).data);
         const rewritten = fs.readFileSync(path.join(root, ENV_FILE), 'utf8');
         assert.match(rewritten, /"version": 2/);
@@ -181,7 +261,7 @@ test('ENV_PWD 存在时仍可解密旧加密文件并在配置页回显', async 
         process.env.ENV_PWD = 'any-current-password';
         fs.writeFileSync(path.join(root, ENV_FILE), legacyEncryptedConfig({
             databases: [{name: 'default', host: 'legacy-encrypted-host', user: 'root', password: 'legacy-encrypted-secret', database: 'legacy'}],
-            ftps: [], apifox: {},
+            ftps: [],
         }));
         childProcess.spawn = () => ({unref() {}});
         console.log = () => {};
@@ -207,7 +287,7 @@ test('密码加密文件缺少密码时配置页可打开但禁止覆盖', async
     const root = tempProject();
     let server;
     try {
-        withEnvPassword('config-lock-password', () => saveProjectConfig(root, {databases: [], ftps: [], apifox: {}}));
+        withEnvPassword('config-lock-password', () => saveProjectConfig(root, {databases: [], ftps: []}));
         delete process.env.ENV_PWD;
         childProcess.spawn = () => ({unref() {}});
         console.log = () => {};
@@ -217,7 +297,7 @@ test('密码加密文件缺少密码时配置页可打开但禁止覆盖', async
         assert.match(html, /设置环境变量 ENV_PWD/);
         assert.match(html, /<form id="form" hidden>/);
         const token = html.match(/const token="([a-f0-9]+)"/)[1];
-        const save = await request(`${session.url}api/save?token=${token}`, 'POST', {databases: [], ftps: [], apifox: {}});
+        const save = await request(`${session.url}api/save?token=${token}`, 'POST', {databases: [], ftps: []});
         assert.equal(save.status, 409);
     } finally {
         childProcess.spawn = originalSpawn;
@@ -242,6 +322,7 @@ test('配置页面支持新增、测试连接且保存后自动关闭', async ()
         assert.equal(htmlResponse.status, 200);
         assert.match(htmlResponse.text, /id="add-database"/);
         assert.match(htmlResponse.text, /id="add-ftp"/);
+        assert.doesNotMatch(htmlResponse.text, /Apifox|apifox|id="apiKey"|id="projectId"/);
         assert.match(htmlResponse.text, /nextName\(databases,'default','database'\)/);
         assert.match(htmlResponse.text, /测试连接/);
         const script = htmlResponse.text.match(/<script>([\s\S]*)<\/script>/)[1];
@@ -251,7 +332,7 @@ test('配置页面支持新增、测试连接且保存后自动关闭', async ()
         const invalidTest = await request(`${session.url}api/test/database?token=${token}`, 'POST', {});
         assert.equal(invalidTest.status, 400);
         assert.match(invalidTest.text, /连接失败/);
-        const save = await request(`${session.url}api/save?token=${token}`, 'POST', {databases: [], ftps: [], apifox: {}});
+        const save = await request(`${session.url}api/save?token=${token}`, 'POST', {databases: [], ftps: []});
         assert.equal(save.status, 200);
         assert.equal(loadProjectConfig(root).created, false);
         await new Promise((resolve) => server.once('close', resolve));
@@ -280,7 +361,7 @@ test('MCP config 工具会立即返回并保留配置页 1 小时', async () => 
         const url = `http://127.0.0.1:${server.address().port}/`;
         const html = await request(url);
         const token = html.text.match(/const token="([a-f0-9]+)"/)[1];
-        const save = await request(`${url}api/save?token=${token}`, 'POST', {databases: [], ftps: [], apifox: {}});
+        const save = await request(`${url}api/save?token=${token}`, 'POST', {databases: [], ftps: []});
         assert.equal(save.status, 200);
     } finally {
         childProcess.spawn = originalSpawn;
